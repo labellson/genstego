@@ -6,7 +6,7 @@ class MatScanner:
     direaction.
     """
 
-    Direction = Enum('Direction', 'raster left_up')
+    Direction = Enum('Direction', 'raster left_up right_up')
 
     @staticmethod
     def _raster_scan(mat, y, x, shape):
@@ -31,6 +31,14 @@ class MatScanner:
         roll = np.roll(mat, -idx)
         return np.flip(roll.flatten(), 0)
 
+    @staticmethod
+    def _right_up(mat, y, x, shape):
+        """Scans from Left to Right. From Down to Up."""
+        y = shape[0] - y - 1
+        idx = y * shape[1] + x
+        flip = np.flip(mat, 0)
+        return np.roll(flip.flatten(), -idx)
+
     @classmethod
     def scan(cls, img, y, x, direction):
         """This method return the flattened pixel sequence given the starting
@@ -49,10 +57,14 @@ class MatScanner:
             return cls._raster_scan(img, y, x, img.shape)
         elif direction == cls.Direction.left_up:
             return cls._left_up(img, y, x, img.shape)
+        elif direction == cls.Direction.right_up:
+            return cls._right_up(img, y, x, img.shape)
 
 
 if __name__ == '__main__':
     mat = np.arange(10).reshape(5,2)
     print('- Original: \n{}'.format(mat))
-    print('\n- Raster order: {}'.format(MatScanner.scan(mat, 4, 1, MatScanner.Direction.raster)))
-    print('\n- Left Up order: {}'.format(MatScanner.scan(mat, 2, 0, MatScanner.Direction.left_up)))
+    #print('\n- Raster order: {}'.format(MatScanner.scan(mat, 4, 1, MatScanner.Direction.raster)))
+    #print('\n- Left Up order: {}'.format(MatScanner.scan(mat, 2, 0, MatScanner.Direction.left_up)))
+    print('\n- Right Up order: {}'.format(MatScanner.scan(mat, 3, 0, MatScanner.Direction.right_up)))
+    
