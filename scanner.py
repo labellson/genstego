@@ -22,15 +22,14 @@ class MatScanner:
         	np.array: the flattened array from the starting point
         """
         idx = y * shape[1] + x
-        flatten = mat.flatten()
-        return np.append(flatten[idx:], flatten[:idx])
+        return np.roll(mat, -idx).flatten()
 
     @staticmethod
     def _left_up(mat, y, x, shape):
         """Scans from Right to Left. From Down to Up."""
-        idx = (shape[0] * shape[1]) - (y * shape[1] + x) - 1
-        flip = np.flip(mat.flatten(), 0)
-        return np.append(flip[idx:], flip[:idx])
+        idx = y * shape[1] + x + 1
+        roll = np.roll(mat, -idx)
+        return np.flip(roll.flatten(), 0)
 
     @classmethod
     def scan(cls, img, y, x, direction):
@@ -54,6 +53,6 @@ class MatScanner:
 
 if __name__ == '__main__':
     mat = np.arange(10).reshape(5,2)
-    print('- Original: {}'.format(mat))
+    print('- Original: \n{}'.format(mat))
     print('\n- Raster order: {}'.format(MatScanner.scan(mat, 4, 1, MatScanner.Direction.raster)))
-    print('\n- Left Up order: {}'.format(MatScanner.scan(mat, 4, 1, MatScanner.Direction.left_up)))
+    print('\n- Left Up order: {}'.format(MatScanner.scan(mat, 2, 0, MatScanner.Direction.left_up)))
