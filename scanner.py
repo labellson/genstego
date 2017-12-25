@@ -19,10 +19,16 @@ class MatScanner:
         	shape: matrix shape
         
         Return:
-        	np.array: the flattened array from the starting point
+        	np.array: flattened array from the starting point
         """
         idx = y * shape[1] + x
         return np.roll(mat, -idx).flatten()
+
+    @staticmethod
+    def _un_raster_scan(mat, y, x, shape):
+        """Undo raster order"""
+        idx = y * shape[1] + x
+        return np.roll(mat, idx).reshape(shape)
 
     @staticmethod
     def _left_up(mat, y, x, shape):
@@ -30,6 +36,13 @@ class MatScanner:
         idx = y * shape[1] + x + 1
         roll = np.roll(mat, -idx)
         return np.flip(roll.flatten(), 0)
+
+    @staticmethod
+    def _un_left_up(mat, y, x, shape):
+        """Undo left up order"""
+        idx = y * shape[1] + x + 1
+        reshape = np.flip(mat, 0).reshape(shape)
+        return np.roll(reshape, idx)
 
     @staticmethod
     def _left_down(mat, y, x, shape):
@@ -40,12 +53,28 @@ class MatScanner:
         return np.roll(flip, -idx).flatten()
 
     @staticmethod
+    def _un_left_down(mat, y, x, shape):
+        """Undo left down order"""
+        x = shape[1] - x -1
+        idx = y * shape[1] + x
+        reshape = np.roll(mat.reshape(shape), idx)
+        return np.flip(reshape, 1)
+
+    @staticmethod
     def _right_up(mat, y, x, shape):
         """Scans from Left to Right. From Down to Up."""
         y = shape[0] - y - 1
         idx = y * shape[1] + x
         flip = np.flip(mat, 0)
         return np.roll(flip.flatten(), -idx)
+
+    @staticmethod
+    def _un_right_up(mat, y, x, shape):
+        """Undo right up order"""
+        y = shape[0] - y - 1
+        idx = y * shape[1] + x
+        reshape = np.roll(mat, idx).reshape(shape)
+        return np.flip(reshape, 0)
 
     @classmethod
     def scan(cls, img, y, x, direction):
@@ -56,7 +85,7 @@ class MatScanner:
         	img: raw image (np.array)
         	y: starting row 
         	x: starting column
-        	direction:
+        	direction: scan direction
 
         Return:
         	numpy.array
@@ -70,12 +99,50 @@ class MatScanner:
         elif direction == cls.Direction.right_up:
             return cls._right_up(img, y, x, img.shape)
 
+    @classmethod
+    def reshape(cls, img, shape, y, x, direction):
+        """Returns the reshaped array given the direction.
+        
+        Args:
+        	img: raw image (np.array)
+        	shape: Shape of array
+        	y: starting row
+        	x: starting column
+        	direction: scan direction
+        
+        Return:
+        	numpy.array
+        """
+        if direction == cls.Direction.raster:
+            return cls._un_raster_scan(img, y, x, shape)
+        elif direction == cls.Direction.left_up:
+            return cls._un_left_up(img, y, x, shape)
+        elif direction == cls.Direction.left_down:
+            return cls._un_left_down(img, y, x, shape)
+        elif direction == cls.Direction.right_up:
+            return cls._un_right_up(img, y, x, shape)
+
 
 if __name__ == '__main__':
     mat = np.arange(10).reshape(2,5)
     print('- Original: \n{}'.format(mat))
-    print('\n- Raster order: {}'.format(MatScanner.scan(mat, 0, 3, MatScanner.Direction.raster)))
-    print('\n- Left Up order: {}'.format(MatScanner.scan(mat, 1, 2, MatScanner.Direction.left_up)))
-    print('\n- Left Down order: {}'.format(MatScanner.scan(mat, 0, 3, MatScanner.Direction.left_down)))
-    print('\n- Right Up order: {}'.format(MatScanner.scan(mat, 1, 3, MatScanner.Direction.right_up)))
-    
+
+    mat_scanned = MatScanner.scan(mat, 0, 3, MatScanner.Direction.raster)
+    print('\n- Raster order: {}'.format(mat_scanned))
+    mat_reshaped = MatScanner.reshape(mat_scanned, (2, 5), 0, 3, MatScanner.Direction.raster)
+    print('- Original: \n{}'.format(mat_reshaped))
+
+    mat_scanned = MatScanner.scan(mat, 1, 3, MatScanner.Direction.right_up)
+    print('\n- Right Up order: {}'.format(mat_scanned))
+    mat_reshaped = MatScanner.reshape(mat_scanned, (2, 5), 1, 3, MatScanner.Direction.right_up)
+    print('- Original: \n{}'.format(mat_reshaped))
+
+    mat_scanned = MatScanner.scan(mat, 1, 2, MatScanner.Direction.left_up)
+    print('\n- Left Up order: {}'.format(mat_scanned))
+    mat_reshaped = MatScanner.reshape(mat_scanned, (2, 5), 1, 2, MatScanner.Direction.left_up)
+    print('- Original: \n{}'.format(mat_reshaped))
+
+    mat_scanned = MatScanner.scan(mat, 0, 3, MatScanner.Direction.left_down)
+    print('\n- Left Down order: {}'.format(mat_scanned))
+    mat_reshaped = MatScanner.reshape(mat_scanned, (2, 5), 0, 3, MatScanner.Direction.left_down)
+    print('- Original: \n{}'.format(mat_reshaped))
