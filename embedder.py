@@ -14,7 +14,7 @@ class Embedder:
     @staticmethod
     def _embed(stego, secret, idx):
         """Embed the secret bits in stego[idx]"""
-        pass
+        np.put(stego, idx, secret)
 
     @classmethod
     def embed(cls, stego, secret, mask, lsb=True):
@@ -34,6 +34,10 @@ class Embedder:
         if capacity > stego.shape[0]:
             raise cls.EmbeddingError('Insufficient stego pixel size.')
 
+        # Use LSB or MSB
+        if lsb:
+            idx += 4
+
         # Secret bitarray [nbits]
         secret_bits = np.unpackbits(secret.astype('uint8'))
 
@@ -44,5 +48,9 @@ class Embedder:
         it = np.nditer(stego_bits, flags=['external_loop', 'buffered'],
                        op_flags=['readwrite'], buffersize=8)
 
-        while not it.finished:
-            cls._embed(it.iternext().value[...], secret_bits, idx)
+        while len(secret_bits) > 0:
+            cls._embed(it.value[...], secret_bits[:len(idx)], idx)
+            secret_bits = np.delete(secret_bits, np.s_[:len(idx)])
+            it.iternext()
+
+        return np.packbits(stego_bits)
