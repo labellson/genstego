@@ -105,11 +105,25 @@ class MatScanner:
             return cls._left_down(img, y, x, img.shape)
 
     @classmethod
+    def scan_genetic(cls, img, chromosome):
+        """This method return the flattened pixel sequence given using
+        the provided chromosome
+
+        Args:
+        	img: raw image (np.array)
+        	chromosome: chromosome encoding x, y, direction genes
+        
+        Return:
+        	numpy.array
+        """
+        return cls.scan(img, chromosome[2], chromosome[1], chromosome[0])
+
+    @classmethod
     def reshape(cls, img, shape, y, x, direction):
         """Returns the reshaped array given the direction.
         
         Args:
-        	img: raw image (np.array)
+        	img: flattened image (np.array)
         	shape: Shape of array
         	y: starting row
         	x: starting column
@@ -128,6 +142,19 @@ class MatScanner:
         elif direction == cls.Direction.left_down:
             return cls._un_left_down(img, y, x, shape)
 
+    @classmethod
+    def reshape_genetic(cls, img, shape, chromosome):
+        """Returns the reshaped array using the provided chromosome
+        
+        Args:
+        	img: flattened image (np.array)
+        	shape: shape of array
+        	chromosome: chromosome encoding x, y, direction genes
+        
+        Return:
+        	numpy.array
+        """
+        return cls.reshape(img, shape, chromosome[2], chromosome[1], chromosome[0])
 
 if __name__ == '__main__':
     mat = np.arange(10).reshape(2,5)
