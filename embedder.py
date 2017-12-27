@@ -17,40 +17,56 @@ class Embedder:
         np.put(stego, idx, secret)
 
     @classmethod
-    def embed(cls, stego, secret, mask, lsb=True):
+    def embed(cls, stego, secret, chromosome):
         """Embed secret bits into stego bits according to the mask
+        The chromosome has the next gene representation:
+        [dir, xoffset, yoffset, bit-planes, sb-pole, sb-dire, bp-dire]
 
         Args:
         	stego: Stego pixel sequence 
         	secret: Secret pixel sequence
-        	mask: bits to use
+        	chromosome: Chromosome of the GA
         
         Return:
         	numpy.array: stego bit sequence with embedded bits
         """
+        # Bit-Planes: Extract the bit mask
+        mask = np.unpackbits(np.array([chromosome[3]], dtype='uint8'))[4:]
         idx = np.argwhere(mask == True)
         capacity = round(8 / len(idx)) * len(secret)
 
         if capacity > stego.shape[0]:
             raise cls.EmbeddingError('Insufficient stego pixel size.')
 
-        # Use LSB or MSB
-        if lsb:
+        # Convert data to uint8
+        stego = stego.astype('uint8')
+        secret = secret.astype('uint8')
+
+        # SB-Pole: Compliment secret bits
+        if chromosome[4]:
+            np.invert(secret, secret)
+
+        # SB-Dire: reverse the secret sequence
+        if chromosome[5]:
+            secret = secret[::-1]
+
+        # BP-Dire: Use LSB or MSB
+        if chromosome[6]:
             idx += 4
 
         # Secret bitarray [nbits]
-        secret_bits = np.unpackbits(secret.astype('uint8'))
+        secret = np.unpackbits(secret)
 
         # Stego bits [nbits]
-        stego_bits = np.unpackbits(stego.astype('uint8'))
+        stego = np.unpackbits(stego)
 
         # Embed the secret bits into the stego image
-        it = np.nditer(stego_bits, flags=['external_loop', 'buffered'],
+        it = np.nditer(stego, flags=['external_loop', 'buffered'],
                        op_flags=['readwrite'], buffersize=8)
 
-        while len(secret_bits) > 0:
-            cls._embed(it.value[...], secret_bits[:len(idx)], idx)
-            secret_bits = np.delete(secret_bits, np.s_[:len(idx)])
+        while len(secret) > 0:
+            cls._embed(it.value[...], secret[:len(idx)], idx)
+            secret = np.delete(secret, np.s_[:len(idx)])
             it.iternext()
 
-        return np.packbits(stego_bits)
+        return np.packbits(stego)

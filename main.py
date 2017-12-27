@@ -13,7 +13,7 @@ secret = np.array([5, 3])
 stego_sequence = MatScanner.scan(stego, 0, 0, MatScanner.Direction.raster)
 
 # Embed secret pixels
-stego_embedded = Embedder.embed(stego_sequence, secret, np.array([1, 1, 1, 1]))
+stego_embedded = Embedder.embed(stego_sequence, secret, np.array([0, 0, 0, 3, 1, 1, 1]))
 
 print('- Stego: \n{}'.format(stego))
 print('\n- Embedded: {}'.format(stego_embedded))
