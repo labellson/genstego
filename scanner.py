@@ -6,7 +6,11 @@ class MatScanner:
     direaction.
     """
 
-    Direction = Enum('Direction', 'raster left_up left_down right_up')
+    class Direction(Enum):
+        raster = 0
+        right_up = 1
+        left_up = 2
+        left_down = 3
 
     @staticmethod
     def _raster_scan(mat, y, x, shape):
@@ -90,14 +94,15 @@ class MatScanner:
         Return:
         	numpy.array
         """
+        direction = cls.Direction(direction)
         if direction == cls.Direction.raster:
             return cls._raster_scan(img, y, x, img.shape)
+        elif direction == cls.Direction.right_up:
+            return cls._right_up(img, y, x, img.shape)
         elif direction == cls.Direction.left_up:
             return cls._left_up(img, y, x, img.shape)
         elif direction == cls.Direction.left_down:
             return cls._left_down(img, y, x, img.shape)
-        elif direction == cls.Direction.right_up:
-            return cls._right_up(img, y, x, img.shape)
 
     @classmethod
     def reshape(cls, img, shape, y, x, direction):
@@ -113,14 +118,15 @@ class MatScanner:
         Return:
         	numpy.array
         """
+        direction = cls.Direction(direction)
         if direction == cls.Direction.raster:
             return cls._un_raster_scan(img, y, x, shape)
+        elif direction == cls.Direction.right_up:
+            return cls._un_right_up(img, y, x, shape)
         elif direction == cls.Direction.left_up:
             return cls._un_left_up(img, y, x, shape)
         elif direction == cls.Direction.left_down:
             return cls._un_left_down(img, y, x, shape)
-        elif direction == cls.Direction.right_up:
-            return cls._un_right_up(img, y, x, shape)
 
 
 if __name__ == '__main__':
