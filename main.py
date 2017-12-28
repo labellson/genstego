@@ -4,6 +4,7 @@ import numpy as np
 from bitarray import bitarray
 from scanner import MatScanner
 from embedder import Embedder
+from decoder import Decoder
 from psnr import psnr
 
 def embed(stego, secret, chromosome):
@@ -29,17 +30,18 @@ def fitness(stego, secret, chromosome):
 # Inputs
 stego = np.arange(9).reshape(3,3)
 secret = np.array([5, 3])
-chromosome = np.array([0, 0, 0, 3, 0, 1, 1])
+chromosome = np.array([0, 0, 0, 3, 1, 1, 1])
 
 # Scan using raster order
 stego_sequence = MatScanner.scan(stego, 0, 0, MatScanner.Direction.raster)
 
 # Embed secret pixels
-stego_embedded = Embedder.embed(stego_sequence, secret, chromosome)
+stego_embedded_sequence = Embedder.embed(stego_sequence, secret, chromosome)
 
-stego_embedded = MatScanner.reshape(stego_embedded, stego.shape, chromosome[2], chromosome[1], chromosome[0])
+stego_embedded = MatScanner.reshape(stego_embedded_sequence, stego.shape, chromosome[2], chromosome[1], chromosome[0])
 
 print('- Stego: \n{}'.format(stego))
 print('\n- Embedded: \n{}'.format(stego_embedded))
+print('\n- Decoded: {}'.format(Decoder.decode(stego_embedded_sequence, chromosome, secret.size)))
 print('\n- Fitness: {}'.format(fitness(stego, secret, chromosome)))
 

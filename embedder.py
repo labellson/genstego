@@ -19,7 +19,7 @@ class Embedder:
     @classmethod
     def embed(cls, stego, secret, chromosome):
         """Embed secret bits into stego bits according to the mask
-        The chromosome has the next gene representation:
+        The chromosome has the following gene representation:
         [dir, xoffset, yoffset, bit-planes, sb-pole, sb-dire, bp-dire]
 
         Args:
