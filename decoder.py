@@ -44,6 +44,11 @@ class Decoder:
             secret = cls._decode(it.value, secret, idx)
             it.iternext()
 
+        # Check if secret is mod 8
+        mod = len(secret) % 8
+        if not mod == 0:
+            secret = np.delete(secret, np.s_[-mod:])
+        
         secret = np.packbits(secret)
 
         # SB-Pole: Compliment secret bits
