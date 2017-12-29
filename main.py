@@ -26,14 +26,29 @@ def fitness(stego, secret, chromosome):
     stego1 = MatScanner.reshape_genetic(stego_sequence, stego.shape, chromosome)
     return psnr(stego, stego1)
 
+def decode(stego, s_shape, chromosome):
+    """Decode the secret message embedded into the host image
+
+    Args:
+    	stego: stego image
+    	s_shape: secret message shape
+    	chromosome: solution chromosome
+    
+    Return:
+    	np.array: the secret message
+    """
+    stego = MatScanner.scan_genetic(stego, chromosome)
+    secret_pixels = s_shape[0] * s_shape[1] if len(s_shape) > 1 else s_shape[0]
+    secret = Decoder.decode(stego, chromosome, secret_pixels)
+    return MatScanner.reshape_genetic(secret, s_shape, chromosome)
 
 # Inputs
 stego = np.arange(9).reshape(3,3)
-secret = np.array([5, 3])
-chromosome = np.array([0, 0, 0, 3, 1, 1, 1])
+secret = np.array([5, 3]).reshape(-1,1)
+chromosome = np.array([3, 1, 1, 7, 1, 0, 1])
 
 # Scan using raster order
-stego_sequence = MatScanner.scan(stego, 0, 0, MatScanner.Direction.raster)
+stego_sequence = MatScanner.scan_genetic(stego, chromosome)
 
 # Embed secret pixels
 stego_embedded_sequence = Embedder.embed(stego_sequence, secret, chromosome)
@@ -42,6 +57,6 @@ stego_embedded = MatScanner.reshape(stego_embedded_sequence, stego.shape, chromo
 
 print('- Stego: \n{}'.format(stego))
 print('\n- Embedded: \n{}'.format(stego_embedded))
-print('\n- Decoded: {}'.format(Decoder.decode(stego_embedded_sequence, chromosome, secret.size)))
+print('\n- Decoded: \n{}'.format(decode(stego_embedded, secret.shape, chromosome)))
 print('\n- Fitness: {}'.format(fitness(stego, secret, chromosome)))
 
