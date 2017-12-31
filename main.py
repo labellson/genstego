@@ -14,9 +14,12 @@ def embed(stego, secret, chromosome):
         chromosome = np.packbits(chromosome.astype(np.uint8))
 
     # Convert to a flattened pixel sequence
-    stego = MatScanner.scan_genetic(stego, chromosome)
+    stego_sequence = MatScanner.scan_genetic(stego, chromosome)
     secret = secret.flatten()
-    return Embedder.embed(stego, secret, chromosome)
+    stego_sequence = Embedder.embed(stego_sequence, secret, chromosome)
+
+    # Reshape the stego image
+    return MatScanner.reshape_genetic(stego_sequence, stego.shape, chromosome)
 
 def fitness(chromosome, stego, secret):
     """Computes fitness for current chromosome"""
@@ -25,12 +28,10 @@ def fitness(chromosome, stego, secret):
 
     # Embed the secret sequence
     try:
-        stego_sequence = embed(stego, secret, chromosome)
+        stego1 = embed(stego, secret, chromosome)
     except:
         return (0,)
 
-    # Reshape the stego image
-    stego1 = MatScanner.reshape_genetic(stego_sequence, stego.shape, chromosome)
     return (psnr(stego, stego1),)
 
 def decode(stego, s_shape, chromosome):
@@ -50,7 +51,7 @@ def decode(stego, s_shape, chromosome):
     stego = MatScanner.scan_genetic(stego, chromosome)
     secret_pixels = s_shape[0] * s_shape[1] if len(s_shape) > 1 else s_shape[0]
     secret = Decoder.decode(stego, chromosome, secret_pixels)
-    return MatScanner.reshape_genetic(secret, s_shape, chromosome)
+    return secret.reshape(s_shape)
 
 def init_chromosome():
     c = np.array([random.randint(0, 3),
@@ -84,7 +85,8 @@ def cxTwoPointCopy(ind1, ind2):
     return ind1, ind2
 
 def main():
-    NGEN, NPOP = 200, 300
+    #NGEN, NPOP = 200, 300
+    NGEN, NPOP = 2, 10
     CXPB, MUTPB = 0.7, 0.04
 
     host = cv2.imread('img/Lenna-256.png', cv2.IMREAD_GRAYSCALE)
@@ -104,7 +106,7 @@ def main():
     toolbox.register('evaluate', fitness, stego=host, secret=secret)
     toolbox.register('mate', cxTwoPointCopy)
     toolbox.register('mutate', tools.mutFlipBit, indpb=0.05)
-    toolbox.register('select', tools.selTournament, tournsize=3)
+    toolbox.register('select', tools.selTournament, tournsize=2)
 
     pop = toolbox.population(n=NPOP)
 
@@ -119,7 +121,7 @@ def main():
     algorithms.eaSimple(pop, toolbox, cxpb=CXPB, mutpb=MUTPB, ngen=NGEN, stats=stats,
                         halloffame=hof)
 
-    return pop, stats, hof
+    return host, secret, pop, stats, hof
 
 if __name__ == '__main__':
-    pop, stats, hof = main()
+    host, secret, pop, stats, hof = main()
