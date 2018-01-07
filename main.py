@@ -54,7 +54,7 @@ def decode(stego, s_shape, chromosome):
     return secret.reshape(s_shape)
 
 def init_chromosome():
-    c = np.array([random.randint(0, 5),
+    c = np.array([random.randint(0, 6),
                   random.randint(0, 255),
                   random.randint(0, 255),
                   random.randint(0, 15),
