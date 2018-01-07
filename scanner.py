@@ -11,6 +11,7 @@ class MatScanner:
         right_up = 1
         left_up = 2
         left_down = 3
+        down_right = 4
 
     @staticmethod
     def _raster_scan(mat, y, x, shape):
@@ -80,6 +81,17 @@ class MatScanner:
         reshape = np.roll(mat, idx).reshape(shape)
         return np.flip(reshape, 0)
 
+    @staticmethod
+    def _down_right(mat, y, x, shape):
+        """Scans from Top-Down. From Left to Right"""
+        idx = x * shape[0] + y
+        return np.roll(mat.flatten('F'), -idx)
+
+    @staticmethod
+    def _un_down_right(mat, y, x, shape):
+        idx = x * shape[0] + y
+        return np.roll(mat, idx).reshape(shape, order='F')
+
     @classmethod
     def scan(cls, img, y, x, direction):
         """This method return the flattened pixel sequence given the starting
@@ -103,6 +115,8 @@ class MatScanner:
             return cls._left_up(img, y, x, img.shape)
         elif direction == cls.Direction.left_down:
             return cls._left_down(img, y, x, img.shape)
+        elif direction == cls.Direction.down_right:
+            return cls._down_right(img, y, x, img.shape)
 
     @classmethod
     def scan_genetic(cls, img, chromosome):
@@ -141,6 +155,8 @@ class MatScanner:
             return cls._un_left_up(img, y, x, shape)
         elif direction == cls.Direction.left_down:
             return cls._un_left_down(img, y, x, shape)
+        elif direction == cls.Direction.down_right:
+            return cls._un_down_right(img, y, x, shape)
 
     @classmethod
     def reshape_genetic(cls, img, shape, chromosome):
@@ -178,4 +194,9 @@ if __name__ == '__main__':
     mat_scanned = MatScanner.scan(mat, 0, 3, MatScanner.Direction.left_down)
     print('\n- Left Down order: {}'.format(mat_scanned))
     mat_reshaped = MatScanner.reshape(mat_scanned, (2, 5), 0, 3, MatScanner.Direction.left_down)
+    print('- Original: \n{}'.format(mat_reshaped))
+
+    mat_scanned = MatScanner.scan(mat, 1, 3, MatScanner.Direction.down_right)
+    print('\n- Down right order: {}'.format(mat_scanned))
+    mat_reshaped = MatScanner.reshape(mat_scanned, mat.shape, 1, 3, MatScanner.Direction.down_right)
     print('- Original: \n{}'.format(mat_reshaped))

@@ -54,7 +54,7 @@ def decode(stego, s_shape, chromosome):
     return secret.reshape(s_shape)
 
 def init_chromosome():
-    c = np.array([random.randint(0, 3),
+    c = np.array([random.randint(0, 4),
                   random.randint(0, 255),
                   random.randint(0, 255),
                   random.randint(0, 15),
@@ -86,11 +86,11 @@ def cxTwoPointCopy(ind1, ind2):
 
 def main():
     #NGEN, NPOP = 200, 300
-    NGEN, NPOP = 2, 10
+    NGEN, NPOP = 10, 300
     CXPB, MUTPB = 0.7, 0.04
 
     host = cv2.imread('img/Lenna-256.png', cv2.IMREAD_GRAYSCALE)
-    secret = cv2.imread('img/baboon-64.png', cv2.IMREAD_GRAYSCALE)
+    secret = cv2.imread('img/rickastleychecklist-180.jpg', cv2.IMREAD_GRAYSCALE)
 
     # Define the individuals
     creator.create('FitnessMax', base.Fitness, weights=(1.0,))
@@ -121,7 +121,10 @@ def main():
     algorithms.eaSimple(pop, toolbox, cxpb=CXPB, mutpb=MUTPB, ngen=NGEN, stats=stats,
                         halloffame=hof)
 
-    return host, secret, pop, stats, hof
+    # Embed secret image using the best individual
+    stego = embed(host, secret, hof.items[0]
+                  
+    return host, stego, secret, pop, stats, hof
 
 if __name__ == '__main__':
     host, secret, pop, stats, hof = main()
