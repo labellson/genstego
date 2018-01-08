@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import random
 
+from matplotlib import pyplot as plt
 from scanner import MatScanner
 from embedder import Embedder
 from decoder import Decoder
@@ -53,6 +54,22 @@ def decode(stego, s_shape, chromosome):
     secret = Decoder.decode(stego, chromosome, secret_pixels)
     return secret.reshape(s_shape)
 
+
+def imshow(host, stego, secret):
+    fig, axes = plt.subplots(1,3)
+    axes[0].set_title('Host')
+    axes[1].set_title('Stego')
+    axes[2].set_title('Secret')
+
+    axes[0].imshow(host, cmap='gray', aspect='equal')
+    axes[1].imshow(stego, cmap='gray', aspect='equal')
+    axes[2].imshow(secret, cmap='gray', aspect='equal')
+
+    plt.setp(axes, xticklabels=[], yticklabels=[], xticks=[], yticks=[])
+
+    plt.show()
+                  
+
 def init_chromosome():
     c = np.array([random.randint(0, 7),
                   random.randint(0, 255),
@@ -90,7 +107,7 @@ def main():
     CXPB, MUTPB = 0.7, 0.04
 
     host = cv2.imread('img/Lenna-256.png', cv2.IMREAD_GRAYSCALE)
-    secret = cv2.imread('img/rickastleychecklist-180.jpg', cv2.IMREAD_GRAYSCALE)
+    secret = cv2.imread('img/baboon-115.png', cv2.IMREAD_GRAYSCALE)
 
     # Define the individuals
     creator.create('FitnessMax', base.Fitness, weights=(1.0,))
@@ -122,9 +139,12 @@ def main():
                         halloffame=hof)
 
     # Embed secret image using the best individual
-    stego = embed(host, secret, hof.items[0]
-                  
+    stego = embed(host, secret, hof.items[0])
+
+    # Show the best solution
+    imshow(host, stego, secret)
+
     return host, stego, secret, pop, stats, hof
 
 if __name__ == '__main__':
-    host, secret, pop, stats, hof = main()
+    host, stego, secret, pop, stats, hof = main()
