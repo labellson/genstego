@@ -1,7 +1,7 @@
-import cv2
 import numpy as np
 import random
 
+from PIL import Image
 from matplotlib import pyplot as plt
 from scanner import MatScanner
 from embedder import Embedder
@@ -56,7 +56,9 @@ def decode(stego, s_shape, chromosome):
 
 
 def imshow(host, stego, secret):
+    """Show the images with matplotlib"""
     fig, axes = plt.subplots(1,3)
+
     axes[0].set_title('Host')
     axes[1].set_title('Stego')
     axes[2].set_title('Secret')
@@ -68,7 +70,6 @@ def imshow(host, stego, secret):
     plt.setp(axes, xticklabels=[], yticklabels=[], xticks=[], yticks=[])
 
     plt.show()
-                  
 
 def init_chromosome():
     c = np.array([random.randint(0, 7),
@@ -102,12 +103,12 @@ def cxTwoPointCopy(ind1, ind2):
     return ind1, ind2
 
 def main():
-    #NGEN, NPOP = 200, 300
-    NGEN, NPOP = 10, 300
+    NGEN, NPOP = 200, 300
     CXPB, MUTPB = 0.7, 0.04
 
-    host = cv2.imread('img/Lenna-256.png', cv2.IMREAD_GRAYSCALE)
-    secret = cv2.imread('img/baboon-115.png', cv2.IMREAD_GRAYSCALE)
+    # Convert to grayscale: http://pillow.readthedocs.io/en/5.0.0/handbook/concepts.html#concept-modes
+    host = np.array(Image.open('img/Lenna-256.png').convert('L'))
+    secret = np.array(Image.open('img/baboon-115.png').convert('L'))
 
     # Define the individuals
     creator.create('FitnessMax', base.Fitness, weights=(1.0,))
