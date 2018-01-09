@@ -1,5 +1,7 @@
 import numpy as np
 import random
+import argparse
+import helper_individual
 
 from PIL import Image
 from matplotlib import pyplot as plt
@@ -12,7 +14,7 @@ from deap import algorithms, base, creator, tools
 def embed(stego, secret, chromosome):
     """Embed secret message into the host using the chromosome"""
     if len(chromosome) > 7:
-        chromosome = np.packbits(chromosome.astype(np.uint8))
+        chromosome = helper_individual.packchromosome(chromosome)
 
     # Convert to a flattened pixel sequence
     stego_sequence = MatScanner.scan_genetic(stego, chromosome)
@@ -25,7 +27,7 @@ def embed(stego, secret, chromosome):
 def fitness(chromosome, stego, secret):
     """Computes fitness for current chromosome"""
     if len(chromosome) > 7:
-        chromosome = np.packbits(chromosome.astype(np.uint8))
+        chromosome = helper_individual.packchromosome(chromosome)
 
     # Embed the secret sequence
     try:
@@ -47,7 +49,7 @@ def decode(stego, s_shape, chromosome):
     	np.array: the secret message
     """
     if len(chromosome) > 7:
-        chromosome = np.packbits(chromosome.astype(np.uint8))
+        chromosome = helper_individual.packchromosome(chromosome)
 
     stego = MatScanner.scan_genetic(stego, chromosome)
     secret_pixels = s_shape[0] * s_shape[1] if len(s_shape) > 1 else s_shape[0]
@@ -72,15 +74,7 @@ def imshow(host, stego, secret):
     plt.show()
 
 def init_chromosome():
-    c = np.array([random.randint(0, 7),
-                  random.randint(0, 255),
-                  random.randint(0, 255),
-                  random.randint(0, 15),
-                  random.randint(0, 1),
-                  random.randint(0, 1),
-                  random.randint(0, 1)], dtype=np.uint8)
-
-    return creator.Individual(np.unpackbits(c))
+    return creator.Individual(helper_individual.init_chromosome())
                                                           
 def cxTwoPointCopy(ind1, ind2):
     """Execute a two points crossover with copy on the input individuals. The
@@ -103,12 +97,19 @@ def cxTwoPointCopy(ind1, ind2):
     return ind1, ind2
 
 def main():
+    ap = argparse.ArgumentParser()
+
+    ap.add_argument('-ht', '--host', required=True)
+    ap.add_argument('-s', '--secret', required=True)
+
+    args = vars(ap.parse_args())
+
     NGEN, NPOP = 200, 300
     CXPB, MUTPB = 0.7, 0.04
 
     # Convert to grayscale: http://pillow.readthedocs.io/en/5.0.0/handbook/concepts.html#concept-modes
-    host = np.array(Image.open('img/Lenna-256.png').convert('L'))
-    secret = np.array(Image.open('img/baboon-115.png').convert('L'))
+    host = np.array(Image.open(args['host']).convert('L'))
+    secret = np.array(Image.open(args['secret']).convert('L'))
 
     # Define the individuals
     creator.create('FitnessMax', base.Fitness, weights=(1.0,))
@@ -136,7 +137,7 @@ def main():
     stats.register('min', np.min)
     stats.register('max', np.max)
 
-    algorithms.eaSimple(pop, toolbox, cxpb=CXPB, mutpb=MUTPB, ngen=NGEN, stats=stats,
+    pop, logbook = algorithms.eaSimple(pop, toolbox, cxpb=CXPB, mutpb=MUTPB, ngen=NGEN, stats=stats,
                         halloffame=hof)
 
     # Embed secret image using the best individual
@@ -145,7 +146,15 @@ def main():
     # Show the best solution
     imshow(host, stego, secret)
 
-    return host, stego, secret, pop, stats, hof
+    return host, stego, secret, pop, stats, logbook, hof
 
 if __name__ == '__main__':
-    host, stego, secret, pop, stats, hof = main()
+    host, stego, secret, pop, stats, logbook, hof = main()
+    vars = {
+        'host' : host,
+        'stego' : stego,
+        'secret' : secret,
+        'pop' : pop,
+        'logbook' : logbook,
+        'hof' : hof
+    }
