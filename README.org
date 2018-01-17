@@ -1,0 +1,2126 @@
+#+TITLE: Image steganography based on a genetic algorithm
+#+AUTHOR: Daniel Laguna Soto - [[mailto:100373538@alumnos.uc3m.es][100373538@alumnos.uc3m.es]]
+#+EMAIL: labellson@gmail.com
+
+#+Options: date:nil H:2
+
+* Uso del programa
+** Paquetes necesarios
+La versión de =Python= utilizada es la =3.6.4=.
+Se necesitan los siguientes paquetes de python: =numpy, PIL, matplotlib, deap=
+
+Pueden instalarse de forma sencilla utilizando =pip=.
+#+BEGIN_EXAMPLE
+pip install <package>
+#+END_EXAMPLE
+
+** Como utilizarlo
+Los únicos argumentos requeridos son =ht= y =s= correspondientes a la imagen host y la imagen secreta.
+
+#+BEGIN_EXAMPLE
+usage: genstego.py [-h] -ht HOST -s SECRET [-g GENERATIONS] [-p POPULATION]
+                   [-c CROSSOVER] [-m MUTATION]
+#+END_EXAMPLE
+
+Ejemplo de uso:
+
+#+BEGIN_EXAMPLE
+python genestego. py -ht img/lenna-256.ppm -s img/grumpy-115.png -g 300 -p 200
+#+END_EXAMPLE
+
+** Como paquete
+También puede importarse en otros trabajos y ser utilizado como paquete. Los métodos interesantes son ~genestego.embed()~ encargado de embeber un mensaje secreto y ~genestego.decode()~ encargado de decodificar el mensaje secreto.
+
+* Introducción
+En este trabajo se ha implementado en =Python= el método de esteganografía definido por cite:kanan2014novel utilizando un algoritmo genético. La esteganografía es un método utilizado con el objetivo de ocultar un mensaje secreto dentro de otro, que actúa como host, de forma que una persona no sea capaz de discernir la existencia de un mensaje secreto. 
+
+El objetivo de este trabajo es modelar el problema de esteganografía como un problema de búsqueda y optimización de forma que se pueda ocultar una imagen secreta dentro de otra imagen host.
+
+* Esteganografía
+Antes de empezar a explicar la solución del problema y la representación del cromosoma del algoritmo genético (GA), se va a explicar algunos conceptos básicos sobre esteganografía.
+
+Para ser capaz de ocultar una señal digital dentro de otra, lo primero que se hace es convertir las señales a secuencia de bits, para poder proceder a la ocultación.
+
+** Raster order y Least Significant Bit
+Una imagen es una matriz de píxeles con valor entre 0-255 (Byte). Una de las formas básicas de embeber los datos en la imagen host es utilizar *Raster order* y *LSB*.
+
+A la hora de generar una secuencia de bits, empezaremos escaneando los píxeles de la imagen utilizando *raster order*. Los píxeles son escaneados de izquierda a derecha empezando por la esquina superior izquierda de la imagen como indica la Figura ref:fig:raster-order.
+
+#+CAPTION: Pixel Scan Raster Order cite:kanan2014novel 
+#+ATTR_LATEX: :width 0.3\textwidth
+#+NAME: fig:raster-order
+[[file:report/raster-order.png]]
+
+Para embeber la secuencia de bits secreta en la secuencia de bits host, se embebe cada bit secreto en el bit menos significativo (*LSB*) de cada Byte de la secuencia host. De esta forma, embeberemos un bit secreto en cada píxel de la imagen host, por lo que utilizaremos 8 píxeles host para embeber 1 píxel secreto.
+
+Utilizando este método solo se sobrescribe el *LSB* de la imagen host, por lo que la perdida de información de la imagen original frente al ojo humano es casi imperceptible Figura ref:fig:lenna-airplane.
+
+#+CAPTION: Lenna host (256x256). Lenna stego (256x256). Jet (81x81).
+#+ATTR_LATEX: :width \textwidth
+#+NAME: fig:lenna-airplane
+[[file:report/lenna-airplane.png]]
+
+Pero esta configuración no tiene por que ser la mejor, pues existen varias direcciones de escaneo y distintos puntos de inicio que podrían funcionar mejor que la técnica de Raster order y LSB. Figura ref:fig:scan-orders.
+
+#+CAPTION: Pixel Scan order 1. Pixel Scan order 2. Raster order con distinto punto de inicio cite:kanan2014novel 
+#+ATTR_LATEX: :width \textwidth
+#+NAME: fig:scan-orders
+[[file:report/scan-orders.png]]
+* Algoritmo Genético
+Para la implementación del algoritmo genético se ha utilizado la librería [[https://github.com/DEAP/deap][DEAP]], Un framework para la creación de algoritmos evolutivos en =Python=.
+
+** Codificación genética
+Un cromosoma esta compuesto por 7 genes que se pueden observar en la tabla ref:tab:genetic-code.
+
+#+CAPTION: Codificación genética
+#+NAME: tab:genetic-code
+|------------+-------+----------+---------------------------------------------------|
+| Nombre Gen | Rango | Longitud | Descripción                                       |
+|------------+-------+----------+---------------------------------------------------|
+| Direction  |   0-7 | 3 Bits   | Dirección de escaneo de píxeles de la imagen host |
+| X-offset   | 0-255 | 8 Bits   | offset en x del punto de inicio                   |
+| Y-offset   | 0-255 | 8 Bits   | offset en y del punto de inicio                   |
+| Bit-Planes |  0-15 | 4 Bits   | LSBs utilizados para la inserción de bits         |
+| SB-Pole    |   0-1 | 1 Bit    | Inversión de los bits secretos                    |
+| SB-Dire    |   0-1 | 1 Bit    | Dirección de los bits secretos                    |
+| BP-Dire    |   0-1 | 1 Bit    | Dirección de los bit planes                       |
+|------------+-------+----------+---------------------------------------------------|
+
+*** *Direction*
+	
+Este gen indica en que dirección se escanea la imagen. Hay 8 direcciones posibles, y una de ellas es el raster order. Se utilizan 3 bits para representarlo.
+
+*** *X-offset*
+	
+Indica la columna de la imagen que va a ser utilizada para empezar el escaneo. Se utilizan 8 bits para representarlos.
+
+*** *Y-offset*
+
+Indica la fila de la imagen que va a ser utilizada para empezar el escaneo. Se utilizan 8 bits para representarlos.
+
+*** *Bit-Planes*
+
+Se representa mediante 4 bits. Indica que bits de la imagen host van a ser utilizados para la inserción del mensaje secreto. Se utilizarán los bits del *LSB* o *MSB* dependiendo del gen *BP-Dire*. Por ejemplo si Bit-Planes es igual a =0001= se utilizaría el bit menos significativo para embeber información, =0101= el bit menos significativo y el tercer bit menos significativo.
+
+*** *SB-Pole*
+
+Es un único bit. Si su valor es =1=, se hace el complemento a uno de la secuencia de bits secretos. Si es =0= no se hace nada. Por ejemplo si el gen tiene valor =1= y nuestra secuencia secreta es =1001=, deberíamos cambiarla a =0110=.
+
+*** *SB-Dire*
+Es un único bit. Si su valor es =1=, se invierte la secuencia de los bits secretos. Es decir, en vez de empezar por el principio empezaremos por el final. Si es =0= no se hace nada. Por ejemplo si el gen tiene valor =1= y la secuencia secreta es =0001= lo cambiaremos a =1000=.
+
+*** *BP-Dire*
+
+Es un único bit. Si su valor es =1=, se embebe el mensaje secreto en los 4 *LSB*. Si su valor es =0= se embebe en los 4 *MSB*.
+
+** Fitness - PSNR
+La función de fitness utilizada para evaluar a los individuos es la función [[https://en.wikipedia.org/wiki/Peak_signal-to-noise_ratio][Peak Signal to Noise Ratio - PSNR]]. Esta función relaciona la máxima energía de una señal y el ruido que afecta a su representación. En el ámbito de la compresión de imágenes, se utiliza para medir la calidad de reconstrucción de una imagen. Se mide en decibelios (dB) y aumenta cuanto mejor sea la codificación. Es una función logarítmica (ref:eq:psnr) donde $MAX$ es el valor máximo de intensidad de un píxel y $MSE$ (ref:eq:mse) el error cuadrático medio entre la imagen host y stego.
+
+#+BEGIN_latex
+\begin{equation}
+PSNR = 10 \cdot log_{10}(\frac{MAX_i^2}{MSE})
+\label{eq:psnr}
+\end{equation}
+#+END_latex
+
+#+BEGIN_latex
+\begin{equation}
+MSE = \frac{1}{MN} \sum_{i=0}^{M-1}\sum_{j=0}^{N-1}||I(k,j) - K(i,j)||^2
+\label{eq:mse}
+\end{equation}
+#+END_latex
+
+** Características del algoritmo genético
+El algoritmo utilizado es el [[http://deap.readthedocs.io/en/master/api/algo.html#deap.algorithms.eaSimple][eaSimple]] y viene definido dentro de la librería =DEAP=. Se puede ver su funcionamiento en el siguiente código. 
+
+#+BEGIN_SRC python
+evaluate(population)
+for g in range(ngen):
+    population = select(population, len(population))
+    offspring = varAnd(population, toolbox, cxpb, mutpb)
+    evaluate(offspring)
+    population = offspring
+#+END_SRC
+
+Primero se hace la evaluación de la población actual y se asigna a cada individuo un fitness. Después de esto se entra en el loop generacional: Dentro se hace la selección de los nuevos individuos. Luego se produce la siguiente generación utilizando los operadores de cruce y mutación, se evalúa los individuos de la nueva generación. Y finalmente se reemplaza la población anterior por la nueva generada y se sigue evolucionando hasta que se llegue al limite de generaciones. A continuación se explica los operadores genéticos utilizados.
+
+*** *Selección*
+	
+El operador de selección utilizado ha sido un torneo de dos individuos. Este operador esta implementado en =DEAP= con el método [[http://deap.readthedocs.io/en/master/api/tools.html#deap.tools.selTournament][selTournament]].
+
+*** *Cruce*
+	
+El operador de cruce es un cruce simple implementado en la función ~cxTwoPointCopy~ que puede encontrarse en el fichero =genstego.py=.
+
+*** *Mutación*
+	
+El operador de mutación esta implementado en =DEAP= con el método [[http://deap.readthedocs.io/en/master/api/tools.html#deap.tools.mutFlipBit][mutFlipBit]]. Si se aplica mutación a un individuo este método aplica el operador =NOT= a cada bit uno a uno siempre que se supere una probabilidad.
+* Ocultar un mensaje secreto
+Para insertar el mensaje secreto se ha seguido el siguiente diagrama de flujo. Figura ref:fig:encode-message. 
+
+Para la imagen host, se genera una secuencia de píxeles siguiendo los parámetros =X-offset=, =Y-offset= y =Direction=. Seguido a esto se crea la secuencia de bits de la imagen host en la que se embeberán los bits secretos.
+
+Para la imagen secreta, se genera la secuencia de bits en =RAW=. Y se realizan las operaciones necesarias según los genes =BP-Pole= y =SB-Dir=.
+
+Si la secuencia de bits secretos es mayor que el numero de bits disponibles en la imagen host, se asignara al individuo fitness 0 y no se embeberá nada. Por el contrario, si se puede ocultar se embeben los bits secretos en la secuencia host utilizando =Bit-Planes= y =BP-Dir=.
+
+#+CAPTION: Embeber el mensaje secreto
+#+ATTR_LATEX: :width 0.8\textwidth :placement [H]
+#+NAME: fig:encode-message
+[[file:report/encode-message.png]]
+
+* Extraer un mensaje secreto
+Para extraer el mensaje secreto se ha seguido el siguiente diagrama de flujo. Figura ref:fig:decode-message.
+
+Primero se utiliza los genes =X-offset=, =Y-offset= y =Direction= para crear la secuencia de píxeles stego y convertirla a secuencia de bits. Se extraen los bits secretos en =RAW= de la secuencia stego utilizando los genes =BP-Dir= y =Bit-Planes=. Se realizan las operaciones necesarias según los genes =BP-Pole= y =SB-Dir=. Finalmente se construye la imagen convirtiendo los bits a píxeles.
+
+#+CAPTION: Decodificar el mensaje secreto
+#+ATTR_LATEX: :width 0.8\textwidth :placement [H]
+#+NAME: fig:decode-message
+[[file:report/decode-message.png]]
+
+* Draft															   :noexport:
+** An Overview
+1. Modify secret bits
+2. Embed into the host image
+  
+** Genetic Algorithm
+Is utilized to find the best starting point, scanning order and other options such that the PSNR fiteness function of the stego-image maximized.
+
+** Main ideas
+1. Order of scanning the image (One way is *Raster order*)
+2. Starting point
+   
+*** Chromosome representation
+The proposed chromosome has 7 genes.
+
+|------------+-------------+--------+----------------------------------------|
+| Gene name  | Value range | Length | Description                            |
+|------------+-------------+--------+----------------------------------------|
+| Direction  |        0-15 | 4 Bits | Direction of host image pixel scanning |
+| X-offset   |       0-255 | 8 Bits | x-offset of starting point             |
+| Y-offset   |       0-255 | 8 Bits | y-offset of starting point             |
+| Bit-Planes |        0-15 | 4 Bits | Used LSBs for secret bit insertion     |
+| SB-Pole    |         0-1 | 1 Bit  | Pole of secret bits                    |
+| SB-Dire    |         0-1 | 1 Bit  | Direction of secret bits               |
+| BP-Dire    |         0-1 | 1 Bit  | Direction of bit planes                |
+|------------+-------------+--------+----------------------------------------|
+
+**** Proposed directions
+***** DONE Derecha - Abajo
+***** DONE Derecha - Arriba
+***** DONE Izquierda - Abajo
+***** DONE Izquierda - Arriba
+***** DONE Abajo - Derecha
+***** DONE Abajo - Izquierda
+
+***** DONE Arriba - Derecha
+***** DONE Arriba - Izquierda
+
+
+| 1 | 2 | 3 |
+| 4 | 5 | 6 |
+| 7 | 8 | 9 |
+
+8 direcciones, pero si invertimos la dirección a la hora de terminar, la fila o la columna como en el ejemplo de abajo. Tendremos un total de 16 direcciones para codificar los bits.
+
+| 1 | 2 | 3 |
+| 6 | 5 | 4 |
+| 7 | 8 | 9 |
+
+| 3 | 2 | 1 |
+| 4 | 5 | 6 |
+| 9 | 8 | 7 |
+
+**** Bit Planes
+Possible values of Bit Planes
+
+| Value | Description      | Value | Description               |
+|-------+------------------+-------+---------------------------|
+|  0000 | Use none of LSBs |  1000 | Use fourth LSB            |
+|  0001 | Use first LSB    |  1001 | Use first and fourth LSBs |
+|   ... | ...              |   ... | ...                       |
+
+**** Last three bits explanation
+Explanation of =SB-Pole=, =SB-Dire= and =BP-Dire=.
+
+| Gene name | Value | Description                                    |
+|-----------+-------+------------------------------------------------|
+| SB-Pole   |     0 | No changes is made to secret bits              |
+|           |     1 | All secret bits are changed to the compliment  |
+| SB-Dire   |     0 | No changes is made to secret bits              |
+|           |     1 | Secret bits are reversed from end to beginning |
+| BP-Dire   |     0 | Bit-planes are used from MSB to LSB            |
+|           |     1 | Bit-Planes are used from LSB to MSB            |
+
+** Fitness function
+[[https://es.wikipedia.org/wiki/PSNR][PSNR]]
+
+** Genetic Algorithm
+- They have considered *tournament* as selection mechanism.
+- The GA stops when user-specified maximum number of generations is reached or the chance of achieving significant changes in the next generation is excessivily low.
+  
+** Their experiments
+*** Parameters of the GA
+| Parameter             | Value |
+|-----------------------+-------|
+| Number of generations |   200 |
+| Population Size       |   300 |
+| Crossover rate        |   0.7 |
+| Mutation rate         |  0.04 |
+| Replacement rate      |   0.8 |
+
+** Requirements
+* Results														   :noexport:
+*** Baboon
+**** Baboon 64x64
+***** RAW Deap
+gen	nevals	avg    	std    	min     	max    
+0  	100   	6.11305	12.0104	-11.8774	30.2859
+1  	79    	11.6941	10.6413	-8.41203	30.2903
+2  	79    	17.0204	8.60369	-7.86275	30.3252
+3  	76    	20.8798	6.58182	-3.17953	30.3252
+4  	74    	22.1895	7.68746	-11.9102	30.3558
+5  	73    	23.0131	8.86321	-8.72669	30.3558
+6  	82    	23.7155	8.87796	-11.9085	30.3609
+7  	72    	25.018 	7.86725	-3.07498	30.3609
+8  	76    	25.5629	8.67361	-8.47192	30.3609
+9  	76    	26.1634	8.25823	-8.76831	30.3609
+10 	82    	25.8699	8.38344	-2.83306	30.3649
+11 	71    	27.3342	7.52922	-7.2298 	30.3657
+12 	78    	25.8879	10.0974	-11.9154	30.3657
+13 	73    	27.9463	7.05498	-8.78725	30.3688
+14 	69    	27.9086	6.86603	-8.49935	30.3688
+15 	77    	26.6783	7.92972	0       	30.3688
+16 	85    	25.792 	9.68727	-9.02358	30.3595
+17 	73    	28.0556	6.3449 	-8.60241	30.3595
+18 	69    	28.1515	6.07323	-1.65041	30.3595
+19 	81    	27.2067	8.10388	-2.92599	30.3595
+20 	74    	27.6529	7.07275	-11.7912	30.3717
+21 	84    	26.0269	9.0404 	-8.56556	30.3717
+22 	76    	26.4119	8.83703	-8.6676 	30.3674
+23 	84    	27.4759	7.15191	-2.61   	30.3589
+24 	76    	25.0722	10.756 	-11.84  	30.3635
+25 	88    	27.1137	8.09407	-8.72261	30.3589
+26 	70    	27.7247	6.73037	-8.65142	30.3677
+27 	79    	25.9183	9.42503	-6.63831	30.3589
+28 	78    	26.7609	7.95492	-8.65756	30.3663
+29 	77    	27.2243	8.47324	-7.14311	30.3558
+30 	82    	26.3718	8.90518	-8.79311	30.3558
+31 	78    	24.7459	10.3609	-8.74859	30.3702
+32 	87    	27.0108	8.40013	-8.63324	30.3508
+33 	78    	24.5274	10.7071	-8.69754	30.3522
+34 	76    	27.4212	7.63887	-6.95286	30.3573
+35 	90    	25.4408	9.77899	-8.76838	30.3468
+36 	71    	26.0407	8.91838	-2.66898	30.3564
+37 	85    	27.5348	7.79627	-8.80242	30.3465
+38 	69    	26.477 	9.1307 	-6.50918	30.3618
+39 	85    	25.8649	9.71132	-8.46468	30.3618
+40 	74    	27.1177	7.40791	-2.17028	30.3618
+41 	74    	26.2557	9.46925	-11.9538	30.3485
+42 	72    	26.1027	8.87303	-6.55039	30.3637
+43 	76    	26.5087	8.40116	-8.8266 	30.357 
+44 	73    	26.1998	8.37092	-8.7591 	30.357 
+45 	75    	27.0302	7.8563 	-6.35588	30.3508
+46 	82    	26.6316	8.64133	0       	30.3516
+47 	73    	25.9324	9.29658	-8.78377	30.346 
+48 	89    	26.6741	8.42015	-7.29705	30.3626
+49 	77    	27.2838	7.83009	-2.68866	30.3578
+50 	85    	27.6725	7.24516	-2.85832	30.3491
+51 	73    	27.7246	7.53744	-5.80903	30.3553
+52 	78    	27.1949	8.16256	-8.96184	30.3553
+53 	85    	25.885 	9.1985 	-2.35023	30.3553
+54 	82    	26.3741	8.24861	-2.82102	30.3553
+55 	76    	25.8339	8.57031	-2.85904	30.3553
+56 	80    	26.4341	8.31988	-6.29619	30.3553
+57 	84    	26.8994	8.82025	-8.89497	30.366 
+58 	76    	27.5393	7.41582	0       	30.3578
+59 	65    	27.4731	7.72529	-8.60869	30.3434
+60 	82    	26.4263	8.96697	-8.93136	30.3434
+61 	78    	26.4316	8.58502	-1.87274	30.3491
+62 	78    	25.5671	9.65869	-8.58899	30.3522
+63 	74    	25.1229	10.6377	-11.8466	30.3522
+64 	81    	27.1754	7.68491	-8.66931	30.3522
+65 	84    	25.7606	9.6972 	-6.14416	30.3491
+66 	82    	25.3449	9.38774	0       	30.3491
+67 	84    	26.9976	7.63321	0       	30.3457
+68 	78    	28.087 	7.021  	-8.60654	30.3601
+69 	64    	27.2129	7.87942	-6.75938	30.3601
+70 	83    	27.0515	7.52165	-5.8227 	30.3601
+71 	78    	27.3034	7.15161	-2.74061	30.3423
+72 	69    	26.5173	7.81546	-3.0438 	30.3471
+73 	71    	26.3102	8.49608	-2.86671	30.3471
+74 	74    	26.1245	8.79806	-3.0362 	30.3567
+75 	80    	25.5942	9.73845	-6.67084	30.3581
+76 	82    	26.2433	8.90943	-8.8265 	30.3587
+77 	65    	28.7863	4.79483	-2.75732	30.3573
+78 	83    	27.0829	8.15185	-11.7649	30.3505
+79 	81    	26.2787	9.73609	-11.8885	30.3785
+80 	84    	26.7857	8.8216 	-8.63237	30.3785
+
+**** Baboon 81x81
+***** RAW Deap
+gen	nevals	avg    	std    	min     	max    
+0  	100   	5.55994	12.8966	-13.9692	28.2283
+1  	79    	12.1425	11.5955	-11.0151	28.2414
+2  	80    	16.4177	10.0039	-10.6675	28.255 
+3  	82    	20.8103	8.01228	-4.7263 	28.2518
+4  	72    	21.8976	9.89012	-8.59521	28.2518
+5  	74    	25.1698	4.68633	4.12192 	28.2518
+6  	68    	24.2358	7.94758	-5.09428	28.2518
+7  	79    	23.147 	10.2445	-10.7929	28.2446
+8  	78    	26.0637	5.59446	0       	28.2513
+9  	67    	25.1354	8.11107	-5.06735	28.2557
+10 	77    	23.4631	9.39246	-9.04647	28.2557
+11 	78    	22.5769	10.2692	-11.0054	28.2557
+12 	79    	24.1725	8.95884	-4.79904	28.2569
+13 	84    	24.9876	8.31152	-13.9661	28.2569
+14 	74    	23.5886	9.80226	-10.9828	28.2569
+15 	82    	23.0634	10.2248	-10.9821	28.2557
+16 	79    	24.8123	8.36129	0       	28.2652
+17 	69    	24.8613	7.99939	-7.87367	28.2652
+18 	81    	24.5462	8.31401	-5.4136 	28.2652
+19 	72    	25.2832	7.44412	-8.94702	28.2652
+20 	79    	25.2519	7.34777	-4.99285	28.2579
+21 	73    	24.3698	8.40146	-10.3221	28.2579
+22 	75    	24.6025	8.64372	-13.9237	28.2579
+23 	80    	25.8256	6.47859	-4.87456	28.2579
+24 	86    	25.2766	7.41744	-10.975 	28.2579
+25 	69    	24.9545	8.36341	-8.99954	28.264 
+26 	86    	23.9489	9.45959	-10.8639	28.2466
+27 	77    	23.6358	10.0922	-10.8576	28.2489
+28 	73    	25.1162	8.39922	-10.9943	28.267 
+29 	78    	25.0854	7.37059	0       	28.267 
+30 	75    	24.6867	9.09552	-13.9586	28.267 
+31 	72    	25.0048	7.66086	-7.93934	28.2607
+32 	75    	24.5981	9.47675	-10.8899	28.2607
+33 	78    	25.3552	7.39216	-10.7783	28.2546
+34 	65    	25.9309	6.50046	-5.00892	28.2522
+35 	73    	25.791 	5.88817	0       	28.2522
+36 	84    	23.7019	8.74078	-3.86977	28.2478
+37 	82    	24.0343	8.57248	-5.07501	28.2478
+38 	80    	24.978 	7.82034	-5.15599	28.2478
+39 	76    	24.545 	8.07425	-7.9685 	28.2694
+40 	73    	24.0621	8.98457	-8.95983	28.2694
+41 	77    	25.2711	7.91294	-8.68528	28.2694
+42 	78    	26.3744	5.76518	-10.9968	28.2694
+43 	88    	24.106 	9.43718	-7.93232	28.2694
+44 	80    	25.0382	8.85797	-11.0325	28.2694
+45 	77    	24.9004	8.13491	-10.7665	28.2487
+46 	71    	24.643 	8.36742	-10.6559	28.2598
+47 	81    	23.4866	9.95286	-13.9418	28.2598
+48 	78    	24.8074	8.36857	-5.11365	28.2598
+49 	81    	24.7451	7.72754	-10.9817	28.2409
+50 	82    	22.9644	10.344 	-10.618 	28.2498
+51 	81    	25.171 	7.63763	-10.6176	28.2437
+52 	79    	24.0414	9.87732	-10.9184	28.2437
+53 	84    	23.54  	9.85097	-10.882 	28.243 
+54 	81    	24.9839	7.87636	-10.399 	28.2442
+55 	78    	24.8243	8.05855	0       	28.2451
+56 	83    	25.319 	6.89088	-5.00777	28.2557
+57 	77    	24.6642	8.27423	-5.06329	28.2557
+58 	76    	23.7864	9.341  	-13.9521	28.2557
+59 	84    	25.7066	7.59777	-13.9483	28.255 
+60 	73    	24.5425	9.09796	-13.9233	28.2581
+61 	80    	25.3735	7.61557	-11.0057	28.2581
+62 	81    	25.1073	7.41273	0       	28.2451
+63 	73    	25.8148	6.48179	-8.70446	28.2734
+64 	82    	24.2101	9.57375	-10.9756	28.2734
+65 	68    	25.479 	7.74275	-13.9085	28.2456
+66 	77    	23.7933	8.93948	-11.0102	28.2494
+67 	77    	25.2008	7.45858	-5.03648	28.2456
+68 	77    	23.0491	10.693 	-10.969 	28.2482
+69 	68    	24.4168	8.03267	0       	28.2482
+70 	79    	25.188 	7.4185 	-5.07822	28.2482
+71 	78    	25.3037	6.78315	-5.03244	28.2572
+72 	79    	25.2122	6.83814	-5.04113	28.2433
+73 	84    	24.6341	7.96719	0       	28.2433
+74 	74    	25.7408	6.38604	0       	28.2433
+75 	75    	25.7262	7.65268	-10.8432	28.2619
+76 	79    	24.1603	9.32159	-13.975 	28.2451
+77 	74    	24.3102	9.70908	-13.9438	28.2451
+78 	80    	24.4507	8.29488	-8.68545	28.2336
+79 	77    	23.8705	8.84615	-4.93814	28.2515
+80 	81    	25.1261	7.92698	-13.9356	28.2489
+**** Baboon 115x115
+***** RAW Deap
+gen	nevals	avg    	std    	min     	max    
+0  	100   	2.25578	10.1994	-13.8672	21.6097
+1  	76    	6.47362	9.97105	-13.8927	21.5945
+2  	72    	11.3139	7.54041	-7.24255	21.5806
+3  	80    	13.4358	8.31905	-13.8765	21.5967
+4  	81    	15.9748	6.70056	-13.4524	21.6196
+5  	74    	15.7351	8.22666	-8.66888	21.6196
+6  	87    	18.4055	6.66335	-11.9386	21.6081
+7  	83    	18.5314	6.58844	-2.55313	21.6233
+8  	88    	19.2091	6.51673	-8.64575	21.6233
+9  	77    	18.9539	7.03751	-11.8797	21.6233
+10 	82    	17.4934	8.49283	-13.4904	21.6279
+11 	84    	19.2623	6.29755	-9.66729	21.6233
+12 	74    	19.2647	6.19972	-13.4137	21.6233
+13 	75    	17.9353	7.75165	-8.37397	21.6233
+14 	90    	18.8124	6.71936	-2.52551	21.6142
+15 	72    	19.1185	6.02492	-2.50986	21.6142
+16 	76    	17.443 	8.62968	-13.8357	21.6156
+17 	83    	18.3228	7.02151	-2.51948	21.6156
+18 	74    	17.6539	8.19357	-13.4143	21.6258
+19 	77    	18.0272	7.77451	-11.7396	21.6156
+20 	81    	18.4505	6.87916	-9.36933	21.6279
+21 	77    	19.314 	5.91208	-8.51236	21.6279
+22 	82    	16.6386	9.34668	-13.8975	21.6279
+23 	80    	15.103 	9.75728	-13.3037	21.6302
+24 	76    	17.9529	7.82602	-7.94821	21.6118
+25 	72    	17.9127	7.63129	-7.9564 	21.6374
+26 	78    	18.6824	6.47454	-2.60588	21.6279
+27 	77    	18.8443	6.73513	-11.8277	21.6154
+28 	74    	18.9592	6.79642	-7.1581 	21.6208
+29 	75    	19.1626	6.66401	-11.7495	21.6208
+30 	78    	17.7769	8.36199	-11.9376	21.6218
+31 	81    	18.5681	6.88438	-7.08891	21.6266
+32 	66    	18.5542	7.20919	-11.7697	21.6399
+33 	76    	19.7808	5.55263	-8.49482	21.6399
+34 	81    	17.9617	8.73419	-11.7296	21.6399
+35 	72    	18.963 	6.41277	-2.58927	21.6399
+36 	80    	18.6575	7.60053	-7.31166	21.6255
+37 	74    	18.8694	6.76038	-7.4124 	21.6297
+38 	71    	18.3279	7.6418 	-11.9349	21.6403
+39 	72    	19.1359	6.43161	-8.42975	21.6255
+40 	77    	18.0006	7.75547	-11.734 	21.6255
+41 	70    	17.9964	7.32274	0       	21.6255
+42 	77    	18.2356	7.45328	-13.5578	21.6255
+43 	68    	17.6206	7.82632	-8.44436	21.6255
+44 	82    	18.1249	7.68352	-7.9102 	21.6126
+45 	78    	18.0049	7.70231	-9.29346	21.6221
+46 	73    	17.7771	8.21898	-11.9234	21.6221
+47 	76    	17.3639	8.47584	-13.4824	21.6142
+48 	72    	17.2933	8.85418	-13.3904	21.6254
+49 	81    	18.2408	6.83063	-2.56435	21.615 
+50 	83    	16.9797	8.98673	-11.812 	21.6175
+51 	69    	17.472 	8.02576	-11.8955	21.6175
+52 	78    	18.5538	7.19972	-11.7595	21.6262
+53 	67    	18.8217	7.10893	-11.8463	21.6341
+54 	87    	19.332 	6.5923 	-11.4457	21.6341
+55 	85    	18.6631	7.56245	-11.8508	21.6264
+56 	75    	19.2507	6.6099 	-11.8649	21.618 
+57 	80    	20.1726	4.72789	-2.46171	21.626 
+58 	77    	19.0829	6.82024	-13.8095	21.626 
+59 	69    	18.8693	6.58395	-8.51513	21.6161
+60 	81    	19.3605	6.24307	-7.18354	21.6154
+61 	75    	18.4853	7.31025	-11.9189	21.6154
+62 	63    	18.9243	7.27808	-13.8759	21.6154
+63 	86    	18.7992	6.57896	-2.60179	21.6145
+64 	80    	18.1193	7.56862	-13.5556	21.6123
+65 	82    	18.1357	7.56103	-11.9392	21.6147
+66 	77    	18.8667	6.90946	-11.7212	21.6233
+67 	83    	17.7968	7.73459	-2.67567	21.6374
+68 	73    	17.3162	8.58531	-13.4589	21.6374
+69 	76    	16.2331	9.02914	-11.7411	21.6233
+70 	75    	17.8515	7.60567	-7.80705	21.6123
+71 	71    	18.2114	7.64975	-11.6469	21.6187
+72 	79    	19.2317	6.43422	-2.60025	21.6193
+73 	84    	19.0274	7.03952	-11.6653	21.6187
+74 	80    	18.1791	8.12373	-13.4564	21.6141
+75 	74    	18.2384	7.72154	-13.9154	21.6309
+76 	85    	16.6183	9.11168	-13.8282	21.6309
+77 	85    	17.7548	7.99365	-13.8662	21.6309
+78 	76    	19.3304	5.72629	-2.53049	21.6309
+79 	77    	18.0211	8.45704	-11.7705	21.6309
+80 	76    	19.6175	5.69866	-7.86297	21.6309
+**** Baboon 127x127
+***** RAW Deap
+gen	nevals	avg     	std    	min     	max    
+0  	100   	0.237999	9.57701	-14.7902	20.6612
+1  	73    	4.57426 	8.65342	-14.7833	20.6552
+2  	76    	9.31675 	8.00162	-14.3577	20.6935
+3  	76    	11.5479 	6.98025	-9.49671	20.6846
+4  	77    	13.0794 	6.88059	-10.7681	20.682 
+5  	75    	14.8658 	5.37335	-12.7728	20.683 
+6  	73    	15.1643 	6.4563 	-12.5707	20.6915
+7  	86    	15.3702 	7.02958	-9.4758 	20.6949
+8  	71    	16.3094 	6.73532	-10.9477	20.7041
+9  	81    	16.4868 	7.35125	-10.5213	20.7007
+10 	71    	17.0056 	7.25159	-10.1323	20.7067
+11 	84    	16.6739 	7.90137	-8.08866	20.7067
+12 	79    	17.5051 	6.87721	-3.43778	20.6973
+13 	86    	17.2762 	7.27829	-7.81085	20.706 
+14 	75    	18.0981 	6.2619 	-3.42855	20.7156
+15 	75    	17.4961 	7.78418	-14.281 	20.7156
+16 	77    	16.5143 	8.75414	-14.3665	20.7093
+17 	80    	17.4577 	7.57058	-8.79166	20.7093
+18 	84    	16.0047 	9.21539	-14.3276	20.7064
+19 	69    	17.9008 	7.27566	-14.3183	20.7064
+20 	79    	17.3195 	7.82904	-12.6532	20.7277
+21 	76    	17.5612 	7.25954	-13.1078	20.7277
+22 	82    	17.3529 	6.73217	0       	20.7277
+23 	78    	16.4977 	7.56791	-10.2897	20.7077
+24 	72    	17.9868 	7.2645 	-14.7186	20.7077
+25 	78    	17.8865 	6.97551	-12.6607	20.7077
+26 	78    	18.1778 	6.54039	-12.7525	20.7077
+27 	82    	17.9418 	6.66832	-9.33551	20.7158
+28 	68    	16.4141 	9.04987	-12.5604	20.7077
+29 	81    	16.6794 	8.04332	-12.7728	20.7055
+30 	84    	17.7868 	6.70269	-12.5872	20.7058
+31 	77    	16.4866 	8.57851	-12.634 	20.7058
+32 	69    	16.6996 	8.08909	-12.695 	20.7096
+33 	75    	16.7602 	7.70899	-10.661 	20.7148
+34 	80    	17.9865 	6.24288	-12.6782	20.7148
+35 	83    	18.1141 	6.69668	-12.7321	20.7148
+36 	79    	17.6507 	8.10826	-12.6929	20.7148
+37 	68    	17.4419 	7.31761	-9.37637	20.7148
+38 	74    	17.5927 	7.32588	-12.7802	20.7088
+39 	72    	17.8571 	8.23539	-14.7749	20.7088
+40 	74    	19.3539 	4.49678	-3.44351	20.7133
+41 	76    	18.2232 	6.94878	-12.7776	20.7167
+42 	79    	16.5263 	7.73587	-3.44284	20.7133
+43 	84    	16.0276 	8.32564	-12.6255	20.7044
+44 	70    	17.7184 	6.97149	-12.7532	20.7033
+45 	83    	18.1995 	6.51406	-12.6543	20.7071
+46 	72    	17.3243 	7.33594	-7.78393	20.7051
+47 	71    	17.8359 	6.89123	-3.40289	20.7079
+48 	71    	17.4695 	7.37414	-8.1321 	20.7227
+49 	84    	16.2003 	9.08298	-14.4156	20.7079
+50 	88    	16.3564 	7.92031	-12.7752	20.6982
+51 	84    	17.1804 	7.01334	-12.6241	20.7258
+52 	81    	16.4302 	7.82735	-12.6483	20.7258
+53 	84    	16.8879 	7.69527	-14.7984	20.7258
+54 	76    	17.6109 	6.13245	-3.41763	20.703 
+55 	79    	15.5052 	9.46781	-14.8135	20.7126
+56 	69    	17.43   	6.54298	0       	20.7026
+57 	77    	18.5119 	5.87709	-9.37093	20.7135
+58 	81    	16.4212 	8.16718	-14.4256	20.7135
+59 	68    	17.2637 	7.4152 	-12.5393	20.7135
+60 	90    	17.5229 	7.08041	-12.9202	20.6986
+61 	69    	17.609  	7.76673	-14.3638	20.7099
+62 	76    	18.0514 	6.78536	-14.7086	20.7118
+63 	68    	16.901  	8.21517	-12.7747	20.6986
+64 	77    	17.5498 	7.59999	-14.7692	20.7232
+65 	80    	16.8679 	7.56126	-12.7862	20.6986
+66 	85    	17.2306 	7.76699	-12.7552	20.6986
+67 	78    	17.7122 	6.60336	-9.40204	20.6986
+68 	83    	18.2035 	6.853  	-12.7583	20.7025
+69 	73    	17.2585 	7.07042	-3.41099	20.6945
+70 	85    	16.3401 	8.56298	-12.9694	20.6976
+71 	76    	16.9487 	7.89578	-12.6248	20.6976
+72 	74    	17.1113 	8.26205	-14.4027	20.6976
+73 	76    	17.4713 	7.57718	-12.7317	20.7065
+74 	74    	17.777  	7.69039	-14.7381	20.7075
+75 	76    	16.743  	7.95732	-7.89124	20.7082
+76 	80    	15.153  	9.33215	-12.7067	20.7014
+77 	76    	17.3708 	7.21685	-14.7349	20.7014
+78 	81    	17.5506 	6.74622	-3.36013	20.7014
+79 	70    	17.5035 	7.3838 	-8.14798	20.7014
+80 	85    	16.4773 	8.71695	-12.74  	20.7014
+
+**** Baboon 140x140
+***** RAW Deap
+gen	nevals	avg      	std    	min     	max    
+0  	100   	-0.206027	6.26111	-13.5471	15.2346
+1  	81    	1.11912  	6.31833	-13.8178	15.2651
+2  	75    	4.04672  	6.29464	-13.3041	15.2651
+3  	73    	6.65952  	6.33603	-13.7688	15.2552
+4  	86    	8.1057   	6.94449	-13.3847	15.266 
+5  	80    	9.07944  	6.71007	-13.5501	15.266 
+6  	79    	9.34063  	6.44697	-11.4583	15.2789
+7  	79    	9.64161  	7.83781	-13.5496	15.2781
+8  	88    	11.766   	6.43537	-13.3566	15.2781
+9  	71    	12.3616  	6.44645	-13.5256	15.2885
+10 	75    	12.9218  	5.54579	-8.84103	15.2777
+11 	76    	12.2974  	6.13669	-13.4914	15.2778
+12 	73    	11.6917  	7.15844	-13.5335	15.2846
+13 	77    	12.9126  	5.92605	-11.0912	15.3012
+14 	78    	13.3146  	5.06759	-11.3126	15.3012
+15 	84    	13.0549  	5.73795	-13.4414	15.3012
+16 	65    	13.3089  	4.80891	0       	15.3012
+17 	73    	12.2845  	6.74105	-13.3083	15.3012
+18 	74    	12.6918  	6.28201	-13.476 	15.2926
+19 	83    	11.819   	7.07735	-8.90011	15.2891
+20 	74    	12.441   	6.19142	-11.1052	15.2897
+21 	76    	13.2257  	5.11608	-8.57997	15.282 
+22 	80    	11.7337  	6.96599	-13.7844	15.2944
+23 	78    	12.4623  	5.909  	-13.4057	15.2944
+24 	76    	13.2317  	5.11146	-8.58505	15.2888
+25 	78    	12.9731  	5.94265	-11.5966	15.2888
+26 	80    	12.2798  	6.08977	-8.79168	15.2888
+27 	82    	10.8813  	7.67745	-13.6398	15.2888
+28 	74    	12.1383  	6.88655	-13.5712	15.2905
+29 	60    	12.7681  	5.96761	-8.91454	15.2888
+30 	77    	12.8341  	6.13682	-11.4293	15.2945
+31 	78    	12.1225  	6.75215	-11.1706	15.2945
+32 	77    	12.7594  	5.73137	-8.89206	15.2945
+33 	65    	13.2169  	5.29101	-8.90426	15.2945
+34 	79    	12.6972  	5.91798	-13.3122	15.2945
+35 	78    	11.9543  	7.2142 	-13.3371	15.2945
+36 	70    	13.5391  	4.60486	0       	15.2945
+37 	71    	12.2696  	6.77695	-13.501 	15.2945
+38 	80    	12.894   	5.76807	-11.3718	15.2945
+39 	80    	10.8947  	7.15485	-8.84075	15.2945
+40 	74    	10.9267  	6.893  	-13.4695	15.2945
+41 	72    	11.8861  	6.82203	-13.547 	15.2945
+42 	80    	12.6217  	6.07083	-11.1543	15.2945
+43 	76    	12.2872  	5.84049	-8.81823	15.2945
+44 	71    	12.6114  	6.35386	-8.88504	15.2945
+45 	63    	13.9929  	3.37745	0       	15.2945
+46 	88    	11.9193  	6.49117	-13.4965	15.2945
+47 	75    	12.7547  	5.84168	-8.81912	15.2945
+48 	65    	12.2482  	6.18225	-11.0585	15.2999
+49 	68    	13.5623  	4.88225	-11.1106	15.2999
+50 	85    	11.8687  	6.80663	-13.2931	15.2945
+51 	78    	11.8085  	7.04698	-11.4646	15.2945
+52 	79    	12.1251  	6.44926	-8.82081	15.2945
+53 	74    	12.3574  	6.27833	-13.5291	15.2945
+54 	78    	11.6104  	7.10847	-13.4991	15.2945
+55 	76    	11.5038  	7.205  	-13.612 	15.2945
+56 	75    	11.7183  	6.62038	-8.94904	15.2945
+57 	79    	12.6334  	5.80267	-11.0383	15.2945
+58 	80    	11.8511  	7.21045	-13.537 	15.2945
+59 	78    	12.554   	6.155  	-13.4591	15.2945
+60 	82    	12.36    	6.47829	-13.3998	15.2945
+61 	85    	13.3862  	5.2661 	-8.93177	15.2945
+62 	84    	12.623   	6.89328	-11.6027	15.2945
+63 	78    	12.4066  	6.22716	-8.94499	15.2945
+64 	84    	13.5859  	5.12955	-11.4949	15.2981
+65 	64    	12.5124  	6.10326	-8.85825	15.2981
+66 	79    	12.2314  	6.67885	-8.80164	15.2981
+67 	82    	13.6112  	5.0062 	-13.672 	15.2981
+68 	72    	13.2323  	5.29286	-8.76922	15.2981
+69 	79    	11.504   	7.12785	-11.4324	15.2981
+70 	83    	12.3066  	6.74185	-13.5675	15.2981
+71 	84    	12.5109  	6.8596 	-13.5435	15.2981
+72 	81    	12.608   	5.97552	-8.76531	15.2981
+73 	84    	12.8967  	5.52727	-11.0162	15.2981
+74 	79    	11.8666  	7.46438	-11.6076	15.2981
+75 	72    	11.9743  	6.97637	-11.6519	15.2981
+76 	82    	12.4661  	6.69505	-13.3541	15.2981
+77 	82    	12.4292  	6.23162	-8.8525 	15.2981
+78 	86    	12.6763  	5.45842	0       	15.2981
+79 	78    	12.5983  	6.35394	-11.2318	15.2981
+80 	80    	11.6901  	7.1329 	-13.5937	15.3053
+**** Baboon 162x162
+***** RAW Deap
+gen	nevals	avg     	std    	min     	max    
+0  	100   	0.216828	2.78912	-12.9352	9.52323
+1  	76    	0.0643499	3.43542	-12.8143	9.53082
+2  	77    	1.20498  	3.57721	-12.6159	9.54783
+3  	82    	2.15828  	4.31817	-12.545 	9.54783
+4  	77    	2.53345  	5.38524	-12.9196	9.54783
+5  	79    	4.02427  	5.25863	-12.6527	9.57997
+6  	77    	5.13274  	4.73734	0       	9.57728
+7  	76    	5.76717  	4.93875	-12.709 	9.57728
+8  	66    	7.16392  	4.74128	-12.8105	9.57728
+9  	78    	7.04055  	5.07518	-12.856 	9.56776
+10 	81    	6.53714  	5.5418 	-12.7544	9.57061
+11 	71    	7.96822  	3.90227	-12.7219	9.5772 
+12 	82    	6.85582  	4.27541	0       	9.5772 
+13 	73    	6.57356  	5.27557	-12.9573	9.5772 
+14 	83    	6.57571  	5.25996	-12.6756	9.58107
+15 	75    	6.85428  	5.17428	-12.8336	9.5876 
+16 	79    	7.30709  	4.36361	-12.6274	9.58107
+17 	81    	7.37224  	4.66231	-12.9146	9.59875
+18 	74    	6.3017   	5.36109	-12.6302	9.59875
+19 	81    	7.50477  	4.26364	-12.8831	9.59638
+20 	73    	7.2245   	4.42796	-12.6978	9.59273
+21 	85    	7.67011  	4.47993	-12.8458	9.59273
+22 	84    	7.73937  	3.74841	0       	9.59286
+23 	75    	7.74413  	4.73365	-12.6529	9.60443
+24 	68    	7.96211  	4.30058	-12.9352	9.59286
+25 	73    	7.16903  	5.05731	-12.7487	9.60247
+26 	83    	7.70547  	4.12624	-12.6377	9.59273
+27 	85    	6.40748  	5.33785	-12.6182	9.58772
+28 	82    	6.84501  	5.47355	-12.93  	9.60247
+29 	77    	6.69556  	5.25537	-12.7989	9.60247
+30 	69    	7.42386  	4.31842	-12.6492	9.60247
+31 	74    	6.9139   	4.89564	-12.8568	9.60247
+32 	76    	7.42219  	4.31236	-12.5469	9.59372
+33 	84    	6.52705  	5.04422	-12.8812	9.59302
+34 	71    	7.1363   	4.47114	-12.4497	9.59302
+35 	69    	7.54148  	3.88836	0       	9.59302
+36 	82    	7.73904  	3.74829	0       	9.59302
+37 	75    	7.6118   	4.2018 	-12.7983	9.60431
+38 	83    	6.65893  	5.52925	-12.8379	9.58299
+39 	81    	7.17683  	5.0398 	-12.6631	9.58319
+40 	72    	7.42408  	4.3157 	-12.5938	9.58558
+41 	70    	7.23392  	4.44234	-12.8851	9.58319
+42 	76    	6.79381  	5.2134 	-12.6374	9.58319
+43 	82    	6.95277  	4.56982	-12.4219	9.58713
+44 	85    	6.47469  	5.59349	-12.7783	9.58319
+45 	82    	7.24406  	5.28552	-12.5918	9.58581
+46 	79    	6.73063  	4.96748	-12.6148	9.58319
+47 	78    	7.52759  	4.2594 	-12.5937	9.5823 
+48 	68    	8.10008  	3.84164	-12.8182	9.5823 
+49 	77    	7.91352  	4.0025 	-12.8484	9.6053 
+50 	72    	7.24804  	5.29024	-12.6676	9.58319
+51 	75    	7.74964  	3.75343	0       	9.58319
+52 	77    	6.60847  	6.04969	-12.8689	9.58319
+53 	81    	6.38786  	5.60756	-12.6346	9.58319
+54 	76    	6.44559  	5.07418	-12.824 	9.58319
+55 	79    	7.30067  	4.7028 	-12.6408	9.58319
+56 	76    	7.64828  	4.80691	-12.8658	9.58319
+57 	79    	7.6816   	4.48176	-12.7905	9.5955 
+58 	76    	7.84443  	3.67539	0       	9.5955 
+59 	72    	6.4163   	5.37242	-12.8116	9.5955 
+60 	80    	6.22307  	5.42066	-12.8277	9.5955 
+61 	75    	7.05144  	4.53722	-12.6752	9.5955 
+62 	81    	6.92244  	4.88785	-12.6256	9.5955 
+63 	78    	6.94645  	4.58246	-12.756 	9.5955 
+64 	77    	6.85645  	4.61515	-12.4524	9.5955 
+65 	70    	7.14478  	4.48083	-12.5532	9.5955 
+66 	78    	6.47717  	5.58715	-12.7168	9.5955 
+67 	85    	7.87237  	4.34826	-12.6627	9.5955 
+68 	75    	7.24044  	4.43273	-12.6256	9.5955 
+69 	79    	5.68225  	6.02245	-12.8066	9.5955 
+70 	80    	6.34725  	5.10165	-12.8077	9.5955 
+71 	78    	7.62182  	4.1994 	-12.6657	9.5955 
+72 	75    	7.29999  	4.71305	-12.9386	9.5955 
+73 	79    	7.52779  	4.26164	-12.6347	9.5955 
+74 	78    	7.05535  	5.3692 	-12.6537	9.5955 
+75 	73    	7.71241  	4.13414	-12.7269	9.5955 
+76 	83    	6.88263  	4.29218	0       	9.59574
+77 	75    	6.43582  	5.06198	-12.6364	9.59574
+78 	80    	6.27668  	5.64212	-12.8182	9.5955 
+79 	86    	7.00585  	4.84372	-12.6865	9.5955 
+80 	77    	7.61579  	4.19468	-12.6285	9.5955 
+**** Baboon 180x180
+***** RAW Deap
+gen	nevals	avg      	std    	min    	max    
+0  	100   	-0.204841	3.23498	-13.805	8.62966
+1  	82    	0.773244 	2.45876	0      	8.60926
+2  	83    	0.643569 	4.82403	-13.7805	8.62892
+3  	81    	1.02617  	5.36899	-13.6666	8.62892
+4  	80    	2.07075  	5.3434 	-13.7057	8.63348
+5  	83    	2.42652  	4.90202	-13.7551	8.6185 
+6  	79    	3.5591   	4.57412	-13.5712	8.61745
+7  	68    	4.48897  	5.24459	-13.7375	8.63847
+8  	71    	5.22907  	4.85806	-13.5997	8.63659
+9  	83    	5.26236  	5.16332	-13.6999	8.63806
+10 	76    	6.34394  	4.50824	-13.7309	8.63814
+11 	76    	5.85582  	5.5762 	-13.6372	8.64622
+12 	87    	6.12768  	4.92751	-13.7407	8.64622
+13 	68    	7.00282  	3.77536	-13.6946	8.64622
+14 	78    	5.51566  	5.66227	-13.6856	8.64622
+15 	77    	6.48957  	4.08758	-13.5149	8.64622
+16 	76    	7.00192  	3.77235	-13.6498	8.64622
+17 	86    	6.65972  	3.99136	-13.5433	8.64957
+18 	77    	6.78054  	4.29108	-13.7118	8.64957
+19 	90    	6.52074  	4.42512	-13.6363	8.64275
+20 	77    	6.41983  	5.10057	-13.6786	8.64976
+21 	76    	6.14019  	4.26093	-13.7076	8.64976
+22 	71    	6.31229  	4.18325	-13.7214	8.64275
+23 	80    	6.79402  	3.50291	0       	8.65967
+24 	79    	6.34997  	4.51191	-13.7773	8.65967
+25 	85    	6.53616  	3.67303	0       	8.65967
+26 	72    	6.35249  	4.50336	-13.5432	8.63377
+27 	75    	7.12508  	4.07182	-13.6796	8.64447
+28 	75    	6.95543  	4.18353	-13.6048	8.63434
+29 	75    	6.42444  	5.11743	-13.7286	8.65061
+30 	78    	6.69825  	4.34252	-13.7315	8.65061
+31 	80    	5.30887  	5.44323	-13.7314	8.64224
+32 	71    	6.13536  	4.91567	-13.6025	8.64224
+33 	73    	6.88713  	3.44363	0       	8.64224
+34 	79    	6.62015  	4.38316	-13.6547	8.64519
+35 	78    	7.14747  	3.23479	0       	8.64519
+36 	88    	6.47931  	4.77227	-13.5786	8.64519
+37 	84    	4.86575  	6.02376	-13.7454	8.64542
+38 	87    	6.49199  	4.08807	-13.5006	8.65037
+39 	88    	5.79105  	5.02606	-13.5641	8.65755
+40 	77    	6.18339  	4.59005	-13.7189	8.65755
+41 	64    	6.00035  	5.26816	-13.7407	8.65755
+42 	81    	6.44609  	4.47002	-13.5869	8.65755
+43 	83    	6.96465  	4.17558	-13.4999	8.65755
+44 	78    	5.79383  	5.03449	-13.7514	8.65232
+45 	72    	5.69696  	5.62752	-13.7833	8.65232
+46 	87    	6.10212  	4.61865	-13.5989	8.65305
+47 	77    	6.39572  	4.82689	-13.7094	8.65232
+48 	77    	7.18935  	3.64152	-13.5261	8.65232
+49 	64    	7.22496  	4.01148	-13.5893	8.63986
+50 	84    	6.00514  	5.27327	-13.7655	8.65232
+51 	83    	5.3146   	5.43763	-13.7396	8.6449 
+52 	85    	5.84302  	4.72201	-13.7714	8.67067
+53 	71    	5.89612  	4.36388	-13.5483	8.65169
+54 	70    	6.57186  	4.74201	-13.5938	8.65232
+55 	83    	6.96518  	4.1962 	-13.7264	8.64521
+56 	67    	7.44875  	3.42357	-13.5585	8.65783
+57 	76    	6.6255   	4.38932	-13.6081	8.65192
+58 	75    	6.66564  	4.6863 	-13.4727	8.65192
+59 	75    	7.00407  	4.5108 	-13.6561	8.65192
+60 	90    	6.08263  	5.79029	-13.6216	8.65192
+61 	69    	6.88145  	4.24294	-13.6451	8.64901
+62 	81    	6.40706  	4.80926	-13.5139	8.64901
+63 	73    	5.88624  	5.02401	-13.7471	8.64901
+64 	83    	5.92087  	5.29423	-13.6185	8.65037
+65 	84    	6.50031  	4.0961 	-13.5694	8.65037
+66 	75    	6.59096  	4.04492	-13.4571	8.65037
+67 	75    	7.49968  	2.89914	0       	8.65031
+68 	74    	6.88545  	4.24127	-13.7099	8.64901
+69 	79    	6.55317  	3.68262	0       	8.64901
+70 	80    	6.94039  	3.83125	-13.442 	8.65794
+71 	72    	6.9397   	3.84767	-13.7312	8.64901
+72 	86    	6.89052  	4.25428	-13.7627	8.64901
+73 	77    	7.11315  	3.72171	-13.6859	8.64901
+74 	80    	6.59841  	4.05652	-13.601 	8.65037
+75 	85    	7.11716  	3.72272	-13.6755	8.65037
+76 	79    	6.72273  	4.34066	-13.5759	8.65037
+77 	80    	6.76178  	4.65152	-13.5459	8.65037
+78 	83    	6.10601  	5.25297	-13.7415	8.65037
+79 	80    	6.50195  	4.78922	-13.6989	8.65037
+80 	78    	6.90411  	3.45216	0       	8.65136
+
+*** Jet
+**** Jet 64x64
+***** RAW Deap
+gen	nevals	avg    	std    	min     	max    
+0  	100   	6.67939	13.1924	-12.1375	30.0857
+1  	81    	10.4617	12.2048	-11.9209	30.1179
+2  	75    	15.0259	10.9283	-9.20095	30.1334
+3  	75    	18.5053	8.42253	-9.0277 	30.1243
+4  	80    	21.5507	7.27049	-4.6167 	30.1243
+5  	68    	21.926 	8.39545	-9.1612 	30.1367
+6  	84    	23.6713	8.21681	-9.04715	30.1367
+7  	82    	25.535 	7.18291	-2.84976	30.1367
+8  	54    	27.1538	5.69653	0       	30.1649
+9  	75    	26.7269	7.7434 	-3.47294	30.159 
+10 	84    	26.2773	8.27707	-8.86064	30.159 
+11 	74    	27.9038	6.88441	-9.22035	30.1579
+12 	80    	26.8293	7.53949	0       	30.1579
+13 	77    	27.2599	7.11465	-9.07057	30.1533
+14 	80    	26.1841	9.19963	-9.02221	30.1428
+15 	76    	27.7802	6.97986	-1.77937	30.1617
+16 	79    	26.8345	8.5313 	-8.99778	30.1617
+17 	74    	26.0638	8.62853	-3.10268	30.1466
+18 	85    	25.0942	9.25259	-7.09506	30.1525
+19 	80    	26.7226	7.81698	-9.13649	30.1466
+20 	80    	24.5789	10.3339	-9.17568	30.1364
+21 	79    	26.0086	8.75474	-3.29807	30.1364
+22 	78    	26.5388	8.12438	-1.85485	30.1458
+23 	75    	27.0839	7.88998	-6.04607	30.1458
+24 	73    	27.277 	7.37816	-6.0819 	30.1458
+25 	76    	23.4956	11.6335	-12.0852	30.1423
+26 	74    	25.4383	9.79461	-8.87137	30.1423
+27 	80    	25.5164	10.3557	-9.32818	30.1418
+28 	63    	26.3772	8.92602	-9.0823 	30.1418
+29 	88    	25.659 	9.50203	-12.1523	30.1418
+30 	85    	27.0061	7.93328	-7.40775	30.1359
+31 	77    	27.6091	7.71415	-9.2947 	30.1404
+32 	78    	26.0554	8.76757	-12.1057	30.1412
+33 	80    	26.7066	8.01386	-3.22485	30.145 
+34 	82    	27.6139	6.61004	0       	30.1749
+35 	74    	25.9871	9.99607	-11.9454	30.145 
+36 	77    	26.9276	8.13158	-9.06211	30.145 
+37 	76    	27.6824	7.00522	0       	30.1487
+38 	77    	27.7279	6.69307	-6.89343	30.1496
+39 	74    	27.5022	7.02825	-7.22132	30.1487
+40 	67    	27.7995	7.28706	-6.06218	30.1428
+41 	67    	27.5214	8.02008	-9.23398	30.1345
+42 	84    	25.7029	10.3044	-9.24095	30.1345
+43 	76    	25.2958	9.61328	-6.54167	30.1345
+44 	78    	26.0291	8.77237	-9.01885	30.1364
+45 	85    	26.4168	8.08895	-6.56051	30.1342
+46 	82    	25.6003	9.85585	-9.33841	30.1342
+47 	83    	25.511 	9.48611	-12.0062	30.1504
+48 	67    	27.5323	6.94357	-6.95564	30.1353
+49 	81    	26.4249	8.66338	-3.47477	30.1364
+50 	78    	27.296 	7.37085	-5.24912	30.1415
+51 	75    	26.5691	8.42543	-6.91281	30.1415
+52 	70    	26.281 	9.20327	-9.1419 	30.1415
+53 	70    	26.9282	8.1107 	-9.06363	30.1415
+54 	85    	26.0279	8.69205	-6.34627	30.1415
+55 	73    	26.4559	8.62953	-9.15464	30.1415
+56 	72    	28.1977	5.28283	6.0097  	30.1259
+57 	79    	24.0404	11.6868	-9.11676	30.1259
+58 	71    	25.5633	9.65994	-9.09515	30.1267
+59 	77    	26.9263	8.25526	-9.24168	30.1399
+60 	69    	26.4915	8.29013	-9.03968	30.1297
+61 	78    	25.5264	9.63599	-9.16447	30.1396
+62 	70    	26.8298	7.81579	-9.03413	30.1479
+63 	78    	27.0056	8.87154	-9.07989	30.1479
+64 	69    	24.8545	10.921 	-9.08428	30.1479
+65 	67    	26.7948	8.54818	-8.98439	30.1471
+66 	84    	26.378 	8.18571	0       	30.1485
+67 	83    	26.2952	8.66694	-11.9247	30.1485
+68 	76    	26.7578	8.19408	-3.16537	30.1485
+69 	77    	27.6269	7.09836	-9.01146	30.1388
+70 	65    	26.9068	7.51159	-3.48554	30.1388
+71 	74    	28.1774	5.74822	-3.42855	30.1388
+72 	82    	27.6715	6.55102	0       	30.1388
+73 	72    	27.2413	7.95167	-6.64163	30.1388
+74 	86    	26.3992	8.42457	-9.18814	30.1407
+75 	68    	26.1344	8.93914	-4.26687	30.166 
+76 	74    	26.9454	8.47041	-7.14712	30.166 
+77 	82    	26.191 	8.63296	-9.00423	30.166 
+78 	74    	26.0007	8.92287	-2.57734	30.1396
+79 	68    	27.4074	7.22214	-3.21671	30.1396
+80 	81    	27.163 	7.63455	0       	30.1396
+**** Jet 81x81
+***** RAW Deap
+gen	nevals	avg    	std   	min     	max    
+0  	100   	6.00491	11.719	-14.1442	28.0795
+1  	88    	10.996 	10.1802	-11.1871	28.065 
+2  	85    	12.206 	10.7095	-11.3345	28.0508
+3  	85    	15.5662	8.21803	-11.1742	28.0811
+4  	78    	18.5424	6.99612	-8.04814	28.0725
+5  	74    	20.6486	7.42756	-11.2862	28.0725
+6  	68    	22.5533	6.17595	0       	28.0623
+7  	70    	23.422 	7.26828	-5.27895	28.0756
+8  	76    	23.2104	8.79017	-2.07929	28.0928
+9  	89    	23.2719	9.0298 	-11.0776	28.0928
+10 	76    	24.2695	8.20501	-11.3248	28.0756
+11 	80    	26.0802	6.05148	-5.25557	28.0815
+12 	72    	24.9481	8.7538 	-11.1903	28.0833
+13 	76    	25.049 	7.99336	-14.12  	28.0833
+14 	67    	24.1736	8.08729	-5.16495	28.0833
+15 	74    	22.6065	9.66613	-5.33803	28.0833
+16 	83    	25.2831	7.13445	-5.42154	28.0833
+17 	85    	24.4419	8.56153	-11.1622	28.0915
+18 	82    	24.0132	8.4672 	-0.113595	28.0915
+19 	77    	24.5987	8.46389	-5.48681 	28.0928
+20 	72    	24.8889	7.78826	-11.1391 	28.0773
+21 	77    	23.3358	9.94541	-11.3097 	28.0952
+22 	68    	24.8249	8.14721	-8.02271 	28.08  
+23 	74    	25.453 	6.6567 	-8.92014 	28.0903
+24 	76    	22.8347	10.4292	-14.0582 	28.0773
+25 	84    	24.8256	7.42382	-5.33789 	28.0989
+26 	76    	24.7989	7.75262	-8.02707 	28.0989
+27 	79    	23.673 	9.37023	-11.0587 	28.0765
+28 	76    	24.7622	8.00174	-11.1963 	28.0942
+29 	85    	25.0243	8.08633	-5.4867  	28.0989
+30 	81    	25.439 	7.66235	-14.1043 	28.0989
+31 	76    	24.3318	8.07201	-11.1163 	28.0989
+32 	71    	23.7664	8.72049	-11.1147 	28.0989
+33 	74    	24.1445	8.74171	-9.02019 	28.0989
+34 	78    	23.9972	9.65231	-14.1682 	28.0989
+35 	67    	25.1691	6.71113	0        	28.0738
+36 	77    	24.9607	7.40917	-0.146459	28.0801
+37 	73    	24.788 	7.65613	-11.1739 	28.0962
+38 	82    	24.1999	9.49951	-11.0167 	28.0803
+39 	74    	25.3828	7.89845	-11.0785 	28.0867
+40 	70    	25.6394	7.61808	-11.1542 	28.0867
+41 	78    	24.5459	7.88031	0        	28.0867
+42 	77    	22.4944	11.037 	-14.0727 	28.0803
+43 	70    	24.7619	8.48517	-14.0582 	28.087 
+44 	76    	23.2179	9.91838	-11.1857 	28.0892
+45 	81    	24.5766	7.51716	-8.02858 	28.0925
+46 	71    	24.6159	8.82083	-14.1486 	28.0925
+47 	84    	24.1521	9.26452	-11.1757 	28.1059
+48 	82    	23.4883	9.89251	-11.2799 	28.0851
+49 	80    	23.9551	8.67091	-11.2254 	28.0803
+50 	71    	24.2003	8.51286	-5.30188 	28.0818
+51 	90    	23.8759	9.12095	-14.1096 	28.0803
+52 	81    	24.2265	8.38088	-8.83064 	28.0803
+53 	77    	24.0143	9.4507 	-11.2851 	28.0803
+54 	74    	24.0629	8.9756 	-7.98867 	28.0885
+55 	78    	24.8262	7.65663	-5.37804 	28.087 
+56 	67    	25.2583	7.43232	-11.005  	28.087 
+57 	81    	25.8092	6.48327	0        	28.087 
+58 	82    	23.654 	8.59759	-8.92873 	28.087 
+59 	65    	23.3488	9.30279	-5.31778 	28.087 
+60 	76    	24.9976	7.08391	0        	28.087 
+61 	72    	25.294 	7.4331 	-14.0915 	28.1258
+62 	78    	24.1277	9.74696	-11.2614 	28.1258
+63 	73    	24.0763	8.95081	-14.135  	28.0811
+64 	79    	24.4706	8.38805	-4.84352 	28.087 
+65 	74    	22.2008	11.2399	-14.1903 	28.087 
+66 	75    	23.7637	9.42417	-11.1502 	28.087 
+67 	82    	24.864 	8.74535	-11.3188 	28.1091
+68 	75    	25.2841	6.91251	-2.09919 	28.1091
+69 	76    	24.684 	7.85679	-9.6351  	28.1091
+70 	79    	24.7082	6.71837	0        	28.1091
+71 	74    	24.8446	7.44281	-5.5497  	28.1091
+72 	75    	24.8463	8.92248	-11.6321 	28.1091
+73 	84    	23.1676	9.87468	-11.2839 	28.096 
+74 	80    	25.5344	6.66566	-5.59458 	28.079 
+75 	76    	26.1356	6.43741	-5.37041 	28.1059
+76 	89    	23.8784	9.84989	-11.1693 	28.1059
+77 	86    	24.0467	9.1082 	-11.1532 	28.0912
+78 	60    	24.5477	8.43275	-8.03176 	28.0912
+79 	76    	26.0616	6.40527	0        	28.0765
+80 	69    	24.595 	8.41636	-8.03193 	28.0922
+
+**** Jet 115x115
+***** RAW Deap
+gen	nevals	avg    	std    	min    	max    
+0  	100   	2.88296	9.95503	-14.438	20.8983
+1  	73    	6.26857	8.77952	-12.0537	20.9122
+2  	75    	10.044 	7.72327	-13.9107	20.9261
+3  	76    	12.8006	6.34064	-11.1509	20.9098
+4  	71    	14.7275	6.6747 	-10.5692	20.9261
+5  	85    	16.3347	6.85772	-11.9937	20.9261
+6  	72    	16.9435	6.78241	-8.44182	20.9388
+7  	83    	17.7139	6.78791	-8.58578	20.9404
+8  	82    	17.6488	7.17351	-11.9179	20.9417
+9  	87    	18.265 	6.79998	-12.1034	20.9388
+10 	86    	17.0839	7.79505	-7.16715	20.9388
+11 	71    	17.1672	7.41102	-10.2166	20.9388
+12 	77    	16.1875	8.49123	-13.9579	20.9589
+13 	76    	17.7146	6.71875	-3.34879	20.9388
+14 	68    	17.3697	7.90408	-14.2775	20.9388
+15 	73    	17.3502	8.05436	-12.0904	20.945 
+16 	79    	17.2019	8.03561	-11.9199	20.9388
+17 	78    	17.6436	7.76154	-12.0789	20.9388
+18 	87    	17.076 	7.94291	-13.9229	20.9365
+19 	71    	17.0908	7.93758	-14.1786	20.9367
+20 	81    	17.7914	7.8567 	-14.1523	20.9367
+21 	75    	19.9995	3.31029	0       	20.9617
+22 	89    	17.7076	7.09865	-7.44849	20.9346
+23 	77    	18.1279	7.18208	-10.5748	20.9388
+24 	80    	17.5513	7.98271	-13.9418	20.9388
+25 	80    	17.2513	7.7348 	-12.1854	20.9388
+26 	80    	18.0547	6.99653	-14.1623	20.9388
+27 	75    	16.6854	8.10544	-3.286  	20.937 
+28 	75    	17.4301	7.43995	-9.01567	20.932 
+29 	73    	17.7944	7.02649	-3.28141	20.9348
+30 	75    	17.1724	7.87692	-13.9557	20.9523
+31 	79    	17.0067	8.03638	-12.0508	20.9554
+32 	80    	16.4415	8.45942	-12.1856	20.9389
+33 	78    	17.5399	8.16802	-12.1272	20.9478
+34 	82    	19.0231	5.0751 	-9.14702	20.9344
+35 	64    	18.683 	5.93783	-7.41678	20.9381
+36 	75    	17.8968	7.61955	-13.9961	20.9682
+37 	71    	17.0793	7.83308	-10.539 	20.9682
+38 	83    	17.83  	7.00448	-7.2814 	20.9448
+39 	79    	17.3318	7.53449	-7.48926	20.9448
+40 	81    	16.1946	9.31188	-14.0243	20.9448
+41 	79    	16.2187	9.27606	-14.0134	20.9422
+42 	78    	17.9201	6.57504	-3.19929	20.9682
+43 	79    	17.5593	7.78691	-12.2066	20.9682
+44 	75    	19.2456	5.28463	-8.41239	20.9682
+45 	70    	18.9024	6.18217	-14.2002	20.9682
+46 	74    	17.4832	7.62289	-7.45356	20.9682
+47 	60    	17.6413	7.50908	-14.182 	20.9417
+48 	80    	17.6994	7.54084	-12.1022	20.9319
+49 	81    	17.2642	7.91256	-11.9451	20.9319
+50 	75    	17.9423	7.38962	-12.0996	20.9319
+51 	77    	17.6827	7.33345	-14.1985	20.9521
+52 	81    	18.3494	7.17155	-14.0038	20.9521
+53 	74    	17.6268	7.97359	-14.0219	20.9521
+54 	76    	17.9978	6.93738	-3.23121	20.9521
+55 	72    	18.3039	6.67131	-9.16235	20.9521
+56 	84    	17.6342	7.51868	-11.9557	20.9521
+57 	74    	19.1471	5.66796	-12.1144	20.9521
+58 	76    	17.9205	7.11548	-3.27422	20.9553
+59 	75    	18.5998	5.85787	-9.19837	20.9553
+60 	72    	18.5914	5.71009	0       	20.9553
+61 	77    	18.1729	6.85362	-3.13238	20.9553
+62 	70    	17.5811	7.88149	-13.963 	20.9521
+63 	78    	18.1606	6.08451	-3.15251	20.9553
+64 	79    	16.6644	8.92111	-13.9664	20.9627
+65 	84    	17.3521	8.13093	-14.1789	20.9627
+66 	81    	18.6403	6.13918	-6.88197	20.9553
+67 	82    	16.6389	9.22202	-14.1996	20.9553
+68 	83    	17.2471	8.14824	-13.9118	20.9553
+69 	69    	18.3545	6.45834	-9.95241	20.9508
+70 	80    	18.2395	7.19087	-11.9273	20.9508
+71 	79    	17.568 	7.3402 	-7.29282	20.9508
+72 	73    	18.031 	7.26342	-13.9042	20.9508
+73 	79    	19.2016	5.00701	-3.28706	20.9508
+74 	80    	17.9029	6.86768	-12.1168	20.9536
+75 	72    	17.0117	8.29311	-11.9154	20.9536
+76 	85    	17.0615	8.68859	-9.94019	20.9589
+77 	75    	17.8094	7.21357	-11.9243	20.9589
+78 	81    	18.5792	6.35688	-6.87479	20.9589
+79 	77    	18.0676	6.93141	-3.286  	20.9589
+80 	82    	18.1636	7.13487	-11.8778	20.9589
+**** Jet 127x127
+***** RAW Deap
+gen	nevals	avg     	std    	min    	max    
+0  	100   	0.414195	10.8764	-15.205	20.0493
+1  	73    	6.18029 	9.38923	-15.1012	20.0767
+2  	85    	9.00425 	9.41006	-14.9816	20.0767
+3  	85    	13.1467 	7.24637	-12.7186	20.081 
+4  	78    	15.623  	6.18547	-12.9891	20.081 
+5  	66    	15.5403 	7.02974	-9.25211	20.081 
+6  	78    	15.158  	8.43922	-15.0319	20.0648
+7  	82    	16.8934 	6.82084	-12.814 	20.0645
+8  	77    	16.5319 	7.55614	-12.9142	20.0626
+9  	74    	16.8642 	7.2513 	-8.40197	20.0703
+10 	72    	15.8622 	8.38228	-15.0813	20.0789
+11 	78    	16.8025 	6.8042 	-4.04052	20.0702
+12 	76    	17.4598 	6.60165	-12.9193	20.0796
+13 	82    	17.8288 	6.27474	-12.8654	20.0796
+14 	79    	15.9506 	9.06867	-15.0359	20.0824
+15 	80    	16.7927 	7.07285	-8.22022	20.0824
+16 	78    	17.0969 	6.62253	-4.01977	20.0764
+17 	69    	18.5744 	4.42217	0       	20.0764
+18 	78    	17.8588 	5.97654	-14.8527	20.0812
+19 	77    	16.1018 	8.33606	-12.9315	20.0812
+20 	73    	16.6755 	7.38352	-12.9752	20.0812
+21 	67    	15.5675 	8.9302 	-13.1403	20.0732
+22 	71    	16.9061 	7.38512	-15.1107	20.0781
+23 	78    	18.2881 	5.39826	-7.79095	20.0781
+24 	81    	17.0668 	7.55896	-12.8531	20.0732
+25 	84    	17.3994 	6.8372 	-12.9477	20.0732
+26 	76    	17.265  	6.66965	-12.9357	20.0709
+27 	81    	17.1938 	7.36383	-13.1126	20.0715
+28 	82    	15.0543 	9.54787	-15.068 	20.0739
+29 	82    	16.3565 	8.28521	-14.8435	20.0709
+30 	67    	18.0809 	5.4141 	-10.0155	20.0709
+31 	77    	16.7002 	7.24843	-9.24597	20.0714
+32 	73    	16.9316 	7.73324	-15.0585	20.0714
+33 	73    	17.0773 	7.42324	-14.7592	20.0714
+34 	76    	17.4837 	7.2911 	-15.0176	20.0714
+35 	68    	17.8108 	6.72686	-12.944 	20.0709
+36 	81    	16.6562 	7.5419 	-15.1132	20.0719
+37 	86    	16.6777 	7.61635	-9.34982	20.0731
+38 	80    	16.6649 	8.02584	-9.16975	20.0763
+39 	75    	18.7521 	5.17792	-12.0306	20.0737
+40 	84    	17.5984 	6.63853	-12.0288	20.0737
+41 	75    	17.4756 	6.78886	-12.7302	20.0737
+42 	82    	15.8407 	8.55984	-9.96993	20.0981
+43 	76    	16.5004 	7.37857	-4.02751	20.0737
+44 	73    	17.4116 	6.29721	-4.04314	20.0737
+45 	71    	16.3831 	8.2725 	-12.8531	20.0737
+46 	80    	16.0516 	8.77382	-15.0531	20.0626
+47 	72    	17.3391 	6.79469	-8.32916	20.0626
+48 	83    	17.7534 	5.98979	-4.018  	20.0656
+49 	81    	17.5384 	6.77208	-10.7424	20.0667
+50 	76    	16.7326 	7.54142	-12.036 	20.0725
+51 	83    	17.5324 	5.75699	0       	20.0725
+52 	84    	16.7247 	7.28042	-10.6187	20.0725
+53 	77    	17.4211 	6.86314	-12.7701	20.0725
+54 	80    	16.4426 	8.06442	-15.0645	20.0725
+55 	76    	15.6394 	8.3765 	-14.8484	20.0789
+56 	76    	16.0395 	8.2262 	-12.9117	20.0789
+57 	86    	16.6903 	7.34999	-12.8132	20.079 
+58 	78    	16.6582 	7.97684	-13.0386	20.0789
+59 	72    	17.6467 	6.05312	-4.05495	20.0803
+60 	76    	17.6478 	6.26637	-12.9237	20.0922
+61 	82    	18.1704 	6.14416	-10.0052	20.0922
+62 	68    	17.381  	7.22201	-12.9611	20.0922
+63 	80    	17.0966 	6.95956	-11.4981	20.0804
+64 	80    	17.3367 	7.16853	-11.4697	20.0804
+65 	75    	16.1405 	8.83879	-14.8096	20.0804
+66 	83    	18.1239 	5.15839	-4.05691	20.0725
+67 	85    	16.2604 	8.61196	-12.9094	20.0725
+68 	85    	16.6055 	7.99491	-14.7889	20.0742
+69 	79    	16.9336 	6.86789	-4.0278 	20.0742
+70 	80    	15.9552 	8.32076	-12.8853	20.0757
+71 	79    	17.0105 	7.02284	-8.19598	20.0757
+72 	70    	16.951  	6.81323	-4.04524	20.0757
+73 	80    	16.6345 	7.68765	-8.3407 	20.0772
+74 	77    	17.4378 	7.16839	-11.9382	20.0742
+75 	70    	17.0188 	7.09935	-12.9482	20.0742
+76 	82    	18.0802 	5.67291	-7.85419	20.0742
+77 	73    	17.1543 	7.30124	-14.8196	20.0742
+78 	78    	17.0086 	6.866  	-4.05385	20.0742
+79 	72    	18.0927 	6.33081	-15.1284	20.0742
+80 	77    	15.4487 	8.94875	-15.0764	20.0742
+
+**** Jet 140x140
+***** RAW Deap
+gen	nevals	avg     	std    	min     	max    
+0  	100   	-1.15377	5.72057	-14.0769	15.0649
+1  	77    	-0.313921	3.71133	-13.642 	15.0834
+2  	75    	0.493092 	3.43219	-13.7698	15.0834
+3  	73    	1.39195  	4.9814 	-13.878 	15.0571
+4  	80    	2.25745  	5.65705	-13.9672	15.0787
+5  	87    	4.93743  	5.60893	-13.9369	15.0787
+6  	86    	5.59018  	7.2206 	-14.1333	15.0944
+7  	82    	6.84113  	6.90899	-13.5424	15.0944
+8  	66    	9.80196  	5.6945 	-12.5427	15.1083
+9  	82    	11.0911  	6.45375	-14.0576	15.0854
+10 	70    	11.9103  	6.34009	-13.738 	15.0854
+11 	84    	10.6811  	7.63325	-13.455 	15.0854
+12 	76    	11.5909  	6.82645	-12.6679	15.0949
+13 	72    	12.3785  	6.28979	-8.98163	15.0949
+14 	74    	12.4174  	6.19045	-9.16683	15.0949
+15 	78    	11.4465  	7.54754	-13.947 	15.0949
+16 	80    	10.5681  	7.23347	-11.9081	15.0926
+17 	76    	11.025   	6.59289	-11.8464	15.0851
+18 	78    	11.8389  	6.45418	-13.8202	15.0899
+19 	67    	11.6134  	6.70681	-9.01212	15.0961
+20 	82    	11.3413  	6.54079	-9.09273	15.0899
+21 	85    	10.3305  	8.11956	-13.6059	15.093 
+22 	77    	12.0832  	5.77767	-8.81456	15.0961
+23 	79    	12.6985  	6.03817	-11.9739	15.1145
+24 	82    	12.6898  	6.05742	-12.2784	15.1145
+25 	78    	11.012   	7.49773	-13.5153	15.1145
+26 	69    	13.0735  	5.37191	-12.0202	15.1068
+27 	77    	12.2243  	6.35222	-13.6326	15.0987
+28 	81    	11.4239  	7.5799 	-13.6024	15.1083
+29 	76    	12.0407  	6.62844	-12.2106	15.1083
+30 	81    	11.5406  	6.58283	-9.19784	15.1145
+31 	80    	12.4292  	5.53279	0       	15.1103
+32 	81    	11.2033  	7.55107	-13.8862	15.1103
+33 	80    	13.366   	5.04287	-8.98745	15.1103
+34 	76    	12.9509  	5.8366 	-13.7821	15.1103
+35 	79    	12.9504  	5.79671	-12.519 	15.1103
+36 	81    	11.6408  	6.9204 	-9.03224	15.1156
+37 	74    	10.5196  	7.93846	-9.15197	15.1156
+38 	85    	12.2798  	6.30711	-9.15026	15.1156
+39 	76    	10.6787  	8.258  	-13.7658	15.1072
+40 	85    	11.8332  	6.48833	-11.9044	15.1036
+41 	78    	11.822   	6.56678	-13.7324	15.1036
+42 	74    	13.1135  	5.14322	-13.7721	15.1024
+43 	80    	12.0833  	6.45386	-13.5138	15.1024
+44 	73    	12.259   	5.91652	-8.99089	15.1024
+45 	77    	12.2083  	6.0553 	-9.16226	15.1024
+46 	75    	11.8839  	7.04661	-12.2991	15.1024
+47 	77    	11.4746  	7.43107	-14.0903	15.0902
+48 	71    	12.202   	6.40073	-12.208 	15.1036
+49 	78    	11.2014  	7.41036	-12.5338	15.1036
+50 	80    	13.2651  	4.60114	0       	15.1079
+51 	79    	12.7228  	5.78087	-8.85541	15.1036
+52 	78    	13.1844  	5.35805	-12.4745	15.1036
+53 	78    	11.8912  	6.85471	-9.10425	15.1036
+54 	77    	11.7876  	6.26309	-9.14655	15.1036
+55 	86    	12.3072  	6.5542 	-12.3174	15.1036
+56 	82    	12.6357  	5.79699	-12.1145	15.1036
+57 	78    	11.6424  	7.08596	-13.4875	15.1072
+58 	77    	11.6423  	7.06267	-12.7546	15.1072
+59 	77    	12.5316  	5.55472	-12.2798	15.1036
+60 	70    	11.7753  	7.1126 	-13.666 	15.1036
+61 	80    	11.5103  	6.56476	-11.8541	15.1072
+62 	82    	12.1226  	6.64377	-14.0162	15.1072
+63 	76    	11.5898  	7.25391	-12.3276	15.1072
+64 	79    	12.1856  	6.84285	-12.1491	15.1072
+65 	85    	12.4558  	6.17836	-12.2688	15.1072
+66 	58    	13.4324  	5.79223	-13.7572	15.1072
+67 	82    	11.4717  	7.29013	-13.8146	15.1072
+68 	71    	11.9765  	6.39841	-9.10444	15.1072
+69 	76    	12.2209  	6.23089	-13.8269	15.1072
+70 	79    	12.7881  	5.98848	-13.4292	15.1072
+71 	80    	11.9897  	6.56863	-13.7199	15.1072
+72 	73    	13.3044  	4.74981	-9.12324	15.1072
+73 	73    	12.5035  	6.34438	-13.8027	15.1072
+74 	69    	11.9521  	6.62065	-8.9896 	15.1072
+75 	75    	12.6103  	6.04386	-12.0692	15.1072
+76 	64    	13.294   	5.49341	-13.9419	15.1072
+77 	74    	12.5586  	5.53507	-8.98118	15.1072
+78 	85    	12.8168  	5.53384	-9.02534	15.1072
+79 	76    	11.2122  	7.90653	-13.8832	15.1072
+80 	77    	10.7099  	7.58228	-9.11834	15.1072
+
+**** Jet 162x162
+***** RAW Deap
+gen	nevals	avg       	std    	min     	max    
+0  	100   	-0.0958959	2.29543	-13.7144	8.84093
+1  	66    	0.441322  	1.92368	0       	8.84245
+2  	79    	0.794237  	2.52552	0       	8.8601 
+3  	74    	1.18663   	3.48502	-13.6922	8.87046
+4  	80    	2.58476   	5.04514	-13.8671	8.85952
+5  	80    	2.70984   	5.91764	-13.8965	8.86551
+6  	67    	4.93531   	5.02965	-13.625 	8.8847 
+7  	72    	5.77645   	4.53859	-13.4693	8.8861 
+8  	66    	5.95445   	4.50892	-13.9913	8.8861 
+9  	82    	6.399     	4.3273 	-13.8475	8.8861 
+10 	87    	5.90687   	5.42682	-13.7311	8.8861 
+11 	67    	6.4322    	5.27981	-13.9179	8.89666
+12 	80    	6.70565   	4.52762	-13.8093	8.8861 
+13 	73    	6.84051   	4.78372	-13.8069	8.8861 
+14 	84    	7.37958   	3.72169	-13.6166	8.89162
+15 	84    	7.02333   	3.97699	-13.6321	8.89246
+16 	73    	6.44925   	4.64489	-13.6415	8.8975 
+17 	74    	6.61923   	5.19528	-13.8081	8.8975 
+18 	79    	5.38316   	5.55757	-13.862 	8.89162
+19 	62    	6.85573   	4.08191	-13.4524	8.90797
+20 	73    	7.47776   	3.63775	-13.362 	8.90797
+21 	68    	6.72276   	4.51263	-13.6909	8.90797
+22 	86    	6.32054   	4.36346	-13.6746	8.92157
+23 	78    	6.3965    	4.99406	-13.7457	8.92157
+24 	83    	5.20263   	5.58585	-13.8317	8.89672
+25 	77    	5.16776   	5.2838 	-13.5242	8.88385
+26 	73    	5.95767   	5.13745	-14.0444	8.87715
+27 	86    	6.40107   	4.31814	-13.6499	8.87715
+28 	75    	7.07079   	3.53547	0       	8.88052
+29 	73    	6.48979   	4.93954	-13.8369	8.88052
+30 	74    	6.40222   	4.97451	-13.7886	8.88383
+31 	75    	7.1132    	3.92381	-13.7273	8.88383
+32 	81    	7.56147   	3.55998	-13.3638	8.88052
+33 	76    	7.78371   	2.87439	0       	8.88052
+34 	72    	7.60845   	3.06989	0       	8.88149
+35 	77    	7.07897   	4.30738	-13.5531	8.88206
+36 	70    	7.29852   	3.79208	-13.5959	8.88361
+37 	83    	6.49678   	4.94322	-13.7972	8.88347
+38 	84    	6.27558   	4.71212	-13.5853	8.88361
+39 	69    	5.91497   	5.42973	-13.6865	8.88361
+40 	79    	6.62851   	4.57277	-13.7337	8.89637
+41 	77    	6.94699   	4.0352 	-13.561 	8.89637
+42 	75    	7.615     	3.07253	0       	8.89067
+43 	81    	6.32353   	5.01422	-13.5932	8.89067
+44 	72    	6.81062   	5.11733	-13.6707	8.89067
+45 	74    	6.63802   	4.56037	-13.5569	8.89067
+46 	71    	6.81302   	4.46203	-13.5742	8.88975
+47 	80    	6.68283   	4.19152	-13.5867	8.88975
+48 	81    	7.0829    	3.54153	0       	8.88885
+49 	77    	7.12104   	3.93422	-13.8478	8.88052
+50 	86    	6.37234   	4.67972	-13.5573	8.8876 
+51 	82    	6.41365   	4.32843	-13.7108	8.89758
+52 	84    	7.12169   	3.93264	-13.8158	8.89581
+53 	78    	6.37045   	4.68916	-13.7405	8.88052
+54 	82    	6.72896   	4.51232	-13.5841	8.88052
+55 	77    	6.14459   	5.10437	-13.8091	8.88053
+56 	72    	7.04359   	3.98888	-13.6791	8.88053
+57 	67    	7.08715   	4.31991	-13.69  	8.88053
+58 	65    	7.00509   	5.01383	-13.6319	8.89758
+59 	77    	7.54251   	4.00253	-13.4173	8.89758
+60 	75    	7.05184   	4.68129	-13.69  	8.88053
+61 	74    	6.83083   	3.73333	0       	8.88053
+62 	77    	6.50795   	4.9388 	-13.8154	8.88053
+63 	74    	6.07003   	5.10976	-13.7843	8.89555
+64 	71    	6.19975   	5.35391	-13.842 	8.89555
+65 	82    	6.82173   	3.7284 	0       	8.89555
+66 	65    	6.6876    	4.18593	-13.435 	8.89555
+67 	78    	6.06063   	5.66728	-13.7028	8.89518
+68 	71    	6.95659   	4.03966	-13.5596	8.89518
+69 	75    	7.13691   	3.92919	-13.6394	8.89518
+70 	75    	7.0492    	3.98863	-13.6295	8.89518
+71 	73    	7.18382   	3.47933	0       	8.89518
+72 	84    	6.96194   	4.03581	-13.4449	8.89518
+73 	70    	6.3365    	5.57852	-13.7733	8.89555
+74 	71    	6.4208    	5.54967	-13.5851	8.89518
+75 	80    	5.66735   	5.50947	-13.9048	8.89518
+76 	80    	6.91558   	4.42763	-13.6088	8.89518
+77 	85    	6.15684   	5.08887	-13.9565	8.91363
+78 	80    	6.29179   	4.72598	-13.7294	8.91363
+79 	80    	7.18348   	3.47917	0       	8.89442
+80 	79    	6.28515   	5.86656	-13.6819	8.89442
+
+**** Jet 180x180
+***** RAW Deap
+gen	nevals	avg      	std    	min     	max    
+0  	100   	-0.186314	3.39921	-14.7509	7.94294
+1  	74    	0.869455 	2.47313	0       	7.91952
+2  	84    	0.486105 	2.6269 	-14.624 	7.91916
+3  	77    	0.499951 	3.19694	-14.6421	7.93898
+4  	85    	0.814938 	3.51303	-14.6616	7.9439 
+5  	78    	1.35465  	3.48948	-14.661 	7.9439 
+6  	84    	1.60687  	4.08603	-14.7211	7.95149
+7  	77    	2.46404  	4.09134	-14.6787	7.9439 
+8  	76    	1.96117  	5.305  	-14.7456	7.96157
+9  	84    	3.19176  	4.63452	-14.4718	7.96157
+10 	83    	4.20582  	4.33582	-14.4288	7.96157
+11 	78    	4.40974  	5.64273	-14.7111	7.94884
+12 	78    	5.8622   	3.91302	-14.705 	7.94267
+13 	90    	6.65774  	3.39692	-14.3908	7.93854
+14 	84    	6.27051  	4.11061	-14.6853	7.93631
+15 	76    	6.10174  	3.78742	-14.6744	7.93309
+16 	78    	5.87584  	4.31756	-14.7588	7.94652
+17 	82    	6.48722  	3.03944	0       	7.94641
+18 	83    	5.50739  	5.13985	-14.7159	7.94364
+19 	69    	6.66245  	3.40002	-14.411 	7.94432
+20 	69    	6.67347  	3.86524	-14.7267	7.94432
+21 	72    	5.73567  	4.73019	-14.7243	7.94432
+22 	65    	5.80948  	4.71166	-14.7449	7.94432
+23 	82    	5.93392  	3.42598	0       	7.95443
+24 	75    	6.33111  	3.16559	0       	7.95443
+25 	80    	6.50006  	3.52143	-14.4571	7.95443
+26 	92    	5.25821  	4.88328	-14.7528	7.95443
+27 	71    	5.58043  	4.77218	-14.6891	7.95443
+28 	67    	6.58092  	3.47638	-14.6553	7.95443
+29 	69    	6.42664  	3.5799 	-14.4616	7.95443
+30 	84    	5.20073  	5.19989	-14.4854	7.95443
+31 	67    	4.83517  	5.85108	-14.4594	7.95443
+32 	76    	5.61781  	3.59038	0       	7.94557
+33 	83    	5.57594  	4.77414	-14.6045	7.95443
+34 	76    	5.10421  	4.89899	-14.4553	7.95074
+35 	89    	6.04073  	4.21975	-14.6447	7.94557
+36 	78    	6.27846  	4.09915	-14.6259	7.96142
+37 	78    	6.50147  	3.54062	-14.7494	7.94557
+38 	72    	6.19645  	4.14213	-14.6693	7.94557
+39 	78    	5.89562  	4.6556 	-14.6356	7.95308
+40 	86    	6.26174  	3.693  	-14.6566	7.9466 
+41 	85    	6.48529  	3.03854	0       	7.94111
+42 	78    	6.33828  	3.64196	-14.6673	7.94111
+43 	74    	5.94928  	3.87584	-14.676 	7.94448
+44 	82    	6.65135  	2.90295	0       	7.95443
+45 	79    	5.89736  	4.67217	-14.752 	7.95209
+46 	71    	5.68695  	5.38412	-14.7277	7.95209
+47 	68    	5.99343  	4.94533	-14.4674	7.95217
+48 	68    	6.90525  	3.19708	-14.3916	7.95217
+49 	76    	5.71613  	3.97999	-14.4752	7.95582
+50 	74    	5.73206  	4.37009	-14.657 	7.94628
+51 	74    	5.3981   	4.10334	-14.4551	7.94628
+52 	78    	6.58252  	3.46298	-14.4385	7.94628
+53 	81    	6.41836  	3.10859	0       	7.94972
+54 	81    	5.66703  	4.7342 	-14.4169	7.94972
+55 	78    	6.18886  	3.73178	-14.4512	7.94972
+56 	76    	5.71502  	3.99444	-14.7419	7.94923
+57 	77    	5.63574  	4.02881	-14.7514	7.952  
+58 	86    	6.05157  	4.21785	-14.4524	7.952  
+59 	82    	6.05019  	4.22163	-14.4988	7.952  
+60 	74    	5.82742  	4.68883	-14.6011	7.95752
+61 	78    	5.68998  	5.0557 	-14.4004	7.95062
+62 	85    	6.51316  	3.54529	-14.7491	7.94972
+63 	77    	6.30854  	4.45654	-14.4245	7.94987
+64 	84    	4.89026  	5.28165	-14.714 	7.94941
+65 	81    	5.80131  	3.9423 	-14.3864	7.95516
+66 	73    	5.9881   	4.63035	-14.7054	7.95217
+67 	70    	5.35524  	4.84928	-14.5087	7.94941
+68 	83    	5.80265  	3.94163	-14.3618	7.94941
+69 	78    	6.14412  	4.55437	-14.7059	7.94941
+70 	84    	5.97767  	4.25767	-14.4975	7.94941
+71 	75    	6.42689  	3.11272	0       	7.94941
+72 	79    	5.9807   	4.26643	-14.6096	7.95134
+73 	76    	5.96788  	3.86873	-14.3905	7.94941
+74 	89    	5.4515   	5.15502	-14.6918	7.94941
+75 	86    	6.13966  	4.1917 	-14.6458	7.94941
+76 	71    	6.19308  	3.28909	0       	7.94941
+77 	64    	6.45993  	4.01275	-14.6641	7.95985
+78 	86    	6.28702  	3.69275	-14.4669	7.94941
+79 	61    	7.14648  	2.3822 	0       	7.94941
+80 	75    	5.1699   	5.79786	-14.511 	7.94941
+*** Pepper
+**** Pepper 64x64
+***** RAW Deap
+gen	nevals	avg    	std    	min     	max    
+0  	100   	6.16112	11.7798	-12.0978	30.0583
+1  	76    	12.5693	10.6683	-8.98959	30.0977
+2  	80    	16.9346	8.70445	-6.87443	30.0969
+3  	79    	21.2724	5.72236	0       	30.1113
+4  	76    	21.9751	8.11391	-8.86242	30.127 
+5  	78    	23.7242	8.60388	-9.03625	30.1313
+6  	72    	25.9316	6.16114	-1.7551 	30.1533
+7  	74    	25.8954	8.47125	-8.85506	30.1533
+8  	74    	25.8509	9.68555	-9.13835	30.1533
+9  	80    	27.8855	6.3117 	-9.16527	30.1533
+10 	83    	27.4944	7.57981	-6.80506	30.1334
+11 	70    	27.4709	7.97463	-7.05529	30.1329
+12 	85    	26.1348	9.35768	-8.80487	30.1313
+13 	84    	26.0738	8.22111	-7.1304 	30.1485
+14 	71    	26.4458	8.59708	-8.99711	30.1485
+15 	74    	26.0193	9.2145 	-9.00889	30.1485
+16 	78    	26.8203	7.91214	-6.0819 	30.1541
+17 	78    	27.877 	6.82032	-8.87244	30.1485
+18 	76    	27.1671	7.83739	-12.0532	30.1485
+19 	73    	27.0156	8.5502 	-6.10806	30.1485
+20 	75    	27.1611	6.96506	-3.22061	30.134 
+21 	87    	27.0943	7.5877 	-9.09571	30.1351
+22 	67    	27.3038	7.98781	-9.00447	30.134 
+23 	88    	25.8236	9.95183	-11.9495	30.1383
+24 	78    	25.8981	9.37185	-6.96852	30.1469
+25 	70    	27.4238	6.86037	0       	30.134 
+26 	80    	27.4183	7.37218	-3.34553	30.1324
+27 	80    	28.0201	6.03908	0       	30.1514
+28 	78    	26.5258	8.67257	-6.94429	30.1514
+29 	77    	26.8097	8.39972	-9.08877	30.1514
+30 	78    	25.7222	9.33101	-7.00831	30.1514
+31 	74    	27.7517	6.22335	-2.61492	30.1514
+32 	73    	27.3533	7.64499	-8.97159	30.1552
+33 	86    	27.213 	7.64431	-12.0423	30.1431
+34 	68    	28.4294	5.1095 	-0.0402618	30.1609
+35 	75    	27.7295	6.80098	0         	30.1609
+36 	78    	25.6244	10.2616	-8.95214  	30.152 
+37 	73    	27.7082	6.29427	-3.34907  	30.1423
+38 	75    	25.5784	10.2411	-9.04653  	30.1369
+39 	81    	26.9549	7.62287	0         	30.1401
+40 	73    	26.96  	7.97649	-6.61363  	30.1385
+41 	81    	26.1008	8.50467	-6.6491   	30.1555
+42 	80    	25.0756	9.73578	-12.0867  	30.1555
+43 	71    	25.465 	9.94833	-12.0097  	30.1393
+44 	82    	25.783 	9.87879	-9.05279  	30.1393
+45 	72    	25.9477	9.75697	-8.97237  	30.1377
+46 	79    	27.1798	8.41709	-12.063   	30.1463
+47 	78    	27.9406	6.30014	-5.23846  	30.1463
+48 	78    	26.9384	8.07264	-2.40656  	30.1522
+49 	79    	23.7646	10.9219	-9.04743  	30.1522
+50 	83    	26.4092	7.96659	-2.94647  	30.1308
+51 	86    	26.6081	8.83844	-8.94267  	30.1522
+52 	80    	25.7742	8.70524	-3.11624  	30.1461
+53 	79    	25.6711	9.61843	-12.0946  	30.1461
+54 	73    	25.9618	8.47061	-3.14974  	30.1461
+55 	93    	25.505 	9.81989	-6.97507  	30.1496
+56 	84    	25.6899	9.47865	-8.95856  	30.1539
+57 	70    	26.5511	8.50158	-12.1253  	30.1337
+58 	78    	26.7324	8.28996	-8.90708  	30.153 
+59 	87    	25.6507	9.8918 	-12.0608  	30.1316
+60 	81    	25.2308	9.64305	-7.3916   	30.1514
+61 	80    	26.9024	7.92698	-3.46288  	30.1514
+62 	70    	27.133 	7.52308	-3.24746  	30.1514
+63 	77    	25.5728	9.43728	-8.94403  	30.1391
+64 	82    	26.2107	8.7046 	-12.1219  	30.1391
+65 	69    	26.4232	8.36355	-6.94363  	30.1391
+66 	79    	24.348 	10.9237	-12.0688  	30.1423
+67 	81    	26.4477	8.30006	0         	30.1391
+68 	78    	26.0058	9.94329	-12.1777  	30.1391
+69 	74    	26.1477	9.0571 	-9.01886  	30.1401
+70 	71    	26.5267	7.90787	-3.23965  	30.1401
+71 	79    	25.9878	9.31768	-9.22516  	30.1663
+72 	82    	25.0098	10.061 	-9.02575  	30.1302
+73 	72    	26.4929	9.12059	-12.1091  	30.1375
+74 	77    	26.623 	8.14216	-6.06692  	30.1566
+75 	81    	25.995 	9.51011	-8.92714  	30.1566
+76 	81    	26.3425	9.11986	-12.0638  	30.1566
+77 	80    	25.2619	9.77712	-3.63656  	30.1566
+78 	78    	28.7743	4.80155	0         	30.1566
+79 	85    	26.0177	8.13134	-6.97345  	30.1566
+80 	75    	26.6232	8.09555	-1.86187  	30.1566
+
+**** Pepper 81x81
+***** RAW Deap
+gen	nevals	avg    	std    	min     	max    
+0  	100   	2.72984	11.8904	-14.1185	28.0336
+1  	83    	9.22148	10.7927	-14.0396	28.051 
+2  	77    	15.0941	9.81145	-10.7704	28.0745
+3  	70    	19.8038	7.38858	-9.03998	28.0831
+4  	78    	20.9446	8.94987	-14.0955	28.0696
+5  	85    	22.1671	8.00469	-8.6466 	28.0882
+6  	84    	23.43  	7.61797	-9.00159	28.0862
+7  	80    	23.7537	9.15411	-14.099 	28.0778
+8  	74    	24.6088	8.66225	-11.0763	28.0867
+9  	69    	23.8867	8.89486	-5.61008	28.0855
+10 	75    	23.6503	9.61044	-14.1264	28.0818
+11 	82    	25.6897	5.93657	0       	28.0838
+12 	76    	23.7366	8.44627	-5.28941	28.0858
+13 	71    	25.1137	7.56357	0       	28.0858
+14 	78    	26.1126	5.97294	-5.21708	28.0858
+15 	87    	25.4923	7.13762	-11.026 	28.0947
+16 	79    	25.1588	7.79319	-10.5769	28.0783
+17 	81    	24.1367	8.96424	-10.9731	28.0867
+18 	84    	25.2491	6.73446	0       	28.0821
+19 	79    	25.3201	7.08093	-0.131381	28.0867
+20 	80    	25.7208	6.39293	0        	28.1152
+21 	79    	24.9728	7.65342	-8.06994 	28.1152
+22 	74    	24.861 	7.97294	-5.30474 	28.1152
+23 	79    	23.9002	9.08675	-9.07881 	28.0798
+24 	74    	24.6738	7.26448	-14.123  	28.0959
+25 	82    	25.5212	6.57543	-2.06641 	28.0716
+26 	75    	25.6956	6.81321	0        	28.0959
+27 	80    	25.1633	7.35252	0        	28.0969
+28 	79    	24.5899	7.73162	0        	28.0746
+29 	80    	23.6358	8.5961 	-11.0721 	28.08  
+30 	73    	24.12  	9.34345	-11.1026 	28.0731
+31 	65    	25.4012	7.3928 	-11.0943 	28.0816
+32 	81    	24.5009	8.10282	-11.111  	28.0835
+33 	81    	23.6621	9.49077	-11.1383 	28.0816
+34 	70    	23.3042	9.23352	-8.06944 	28.0858
+35 	82    	25.101 	7.68373	-11.1038 	28.0942
+36 	74    	24.6257	7.86702	-4.90018 	28.0858
+37 	82    	24.9879	7.77623	-11.0512 	28.0828
+38 	79    	25.7103	6.83626	-10.9903 	28.0788
+39 	68    	24.1195	9.38644	-9.274   	28.0815
+40 	80    	23.9048	8.85528	-8.08916 	28.0858
+41 	73    	24.8568	6.99375	0        	28.1071
+42 	78    	24.4841	8.70613	-11.0373 	28.1071
+43 	82    	25.4172	7.44653	-11.0445 	28.0925
+44 	73    	23.6847	9.45953	-11.0217 	28.1006
+45 	73    	24.3445	8.27855	-11.043  	28.0925
+46 	80    	23.3681	8.81852	-11.0481 	28.0925
+47 	73    	24.1378	8.71061	-11.0572 	28.0925
+48 	74    	24.112 	8.21235	-11.0576 	28.0969
+49 	83    	24.7417	7.92984	-10.9873 	28.0969
+50 	76    	24.702 	8.93307	-11.0915 	28.0969
+51 	70    	24.6276	8.10048	-11.0461 	28.0863
+52 	78    	26.0387	6.39301	-11.0831 	28.0863
+53 	79    	25.2726	7.33462	-10.9883 	28.0969
+54 	72    	25.1807	7.38304	-8.81025 	28.0969
+55 	79    	23.7824	9.26732	-11.0256 	28.0776
+56 	87    	25.6347	6.65626	-8.12159 	28.1022
+57 	71    	24.6236	8.40809	-11.0949 	28.0776
+58 	83    	24.6591	7.88846	-5.2917  	28.0761
+59 	78    	23.7053	9.1459 	-14.0877 	28.0793
+60 	79    	24.1859	9.43707	-10.9956 	28.1022
+61 	77    	23.7134	10.5821	-14.1169 	28.1022
+62 	85    	23.9835	9.0229 	-8.04196 	28.1022
+63 	65    	23.5858	9.16572	-10.9469 	28.1022
+64 	77    	24.2887	9.12216	-14.1038 	28.1022
+65 	80    	24.0459	9.42302	-11.1028 	28.086 
+66 	83    	23.5214	9.63751	-11.1488 	28.0813
+67 	77    	22.6114	10.6358	-14.0929 	28.0945
+68 	71    	24.7073	8.35432	-11.0541 	28.0813
+69 	82    	25.4746	6.68882	-11.0532 	28.0918
+70 	80    	26.1501	5.52382	0        	28.0918
+71 	80    	23.8272	9.65065	-11.0247 	28.0918
+72 	74    	25.6811	6.55468	-2.07252 	28.0918
+73 	75    	23.6331	9.37308	-8.96924 	28.092 
+74 	79    	24.221 	9.12956	-14.0342 	28.0785
+75 	80    	23.7662	8.84587	-11.1177 	28.079 
+76 	88    	23.6762	9.70371	-10.993  	28.0872
+77 	89    	23.2453	9.7373 	-9.37368 	28.1132
+78 	69    	25.5099	5.87381	0        	28.1063
+79 	77    	23.7789	9.21604	-14.1322 	28.1046
+80 	79    	23.5408	9.62559	-11.0866 	28.0893
+**** TODO Pepper 115x115
+***** RAW Deap
+gen	nevals	avg     	std   	min     	max    
+0  	100   	0.837266	11.472	-14.1382	21.3306
+1  	83    	4.89657 	10.6171	-14.0223	21.3306
+2  	73    	8.06267 	8.79179	-13.6637	21.3192
+3  	80    	10.5804 	8.12046	-14.0807	21.3234
+4  	74    	11.9977 	8.07437	-13.6783	21.332 
+5  	82    	13.7062 	8.16062	-12.0695	21.332 
+6  	79    	15.7007 	7.73857	-11.904 	21.348 
+7  	73    	16.8015 	7.41668	-10.0373	21.3438
+8  	83    	16.7323 	8.45233	-11.9459	21.349 
+9  	71    	17.925  	7.42372	-6.9222 	21.344 
+10 	84    	17.8776 	7.91516	-10.0222	21.344 
+11 	81    	17.8185 	7.93205	-13.7323	21.344 
+12 	84    	18.0533 	7.31276	-2.74694	21.3559
+13 	88    	18.4765 	7.12104	-8.21159	21.3425
+14 	81    	19.1465 	6.30277	-6.95574	21.3463
+15 	62    	19.5525 	5.98647	-11.9168	21.3563
+16 	82    	17.1514 	8.15119	-8.21361	21.3463
+17 	82    	17.3785 	8.04209	-12.104 	21.3463
+18 	76    	17.9622 	7.95411	-13.7366	21.3576
+19 	76    	16.9981 	8.57052	-12.098 	21.3576
+20 	73    	17.5906 	7.30889	-2.8307 	21.3576
+21 	70    	17.3081 	8.09268	-13.679 	21.3445
+22 	84    	18.8725 	6.82209	-14.006 	21.3662
+23 	76    	19.2461 	6.01725	-7.43632	21.3662
+24 	80    	18.0714 	8.27322	-13.741 	21.3686
+25 	78    	17.6315 	8.11798	-8.83515	21.3662
+26 	83    	18.6003 	6.66441	-8.83512	21.3487
+27 	79    	17.7334 	7.85734	-12.0244	21.3425
+28 	80    	17.1355 	8.52934	-13.7636	21.341 
+29 	78    	17.5581 	7.85776	-8.19167	21.3498
+30 	74    	18.4706 	7.47318	-12.1268	21.3498
+31 	83    	18.976  	6.27445	-2.86582	21.3696
+32 	81    	19.2517 	6.44715	-10.4102	21.3696
+33 	79    	17.2452 	8.56728	-10.3009	21.3773
+34 	76    	18.1525 	6.93532	-8.88608	21.3696
+35 	80    	18.1534 	8.17202	-13.5979	21.3696
+36 	77    	18.8987 	5.92122	-2.88055	21.3743
+37 	79    	18.4361 	6.5517 	-8.75097	21.3498
+38 	79    	18.4236 	6.74877	-7.10665	21.3578
+39 	70    	18.5014 	6.91792	-2.82446	21.3578
+40 	75    	18.5126 	6.74832	-2.8685 	21.3578
+41 	77    	19.481  	5.63887	0       	21.3578
+42 	83    	18.1295 	8.16322	-14.0036	21.3578
+43 	73    	17.7629 	8.1046 	-8.7221 	21.3578
+44 	67    	17.3356 	7.75712	-7.41538	21.3578
+45 	79    	18.8328 	6.29818	-12.0707	21.3578
+46 	76    	18.9769 	6.53249	-12.0429	21.3578
+47 	80    	18.3826 	7.31778	-11.9218	21.3578
+48 	88    	16.7818 	8.0862 	-8.13063	21.3578
+49 	81    	18.4645 	6.97068	-11.9759	21.3578
+^[[1;3C50 	79    	18.3177 	7.99544	-13.7135	21.3578
+51 	76    	18.768  	6.92539	-6.93958	21.3578
+52 	89    	18.1161 	7.61383	-7.10719	21.3578
+53 	73    	18.3873 	7.61743	-14.0443	21.3578
+54 	75    	19.0046 	5.75636	-2.88825	21.3578
+55 	68    	18.0728 	7.59468	-8.84325	21.3578
+56 	76    	19.5162 	5.36663	-2.85907	21.3578
+57 	69    	17.3063 	8.8363 	-11.9511	21.3578
+58 	88    	17.1575 	8.55014	-12.0448	21.3578
+59 	79    	16.5275 	9.67712	-13.6241	21.3578
+60 	86    	16.3503 	8.84395	-12.0749	21.3578
+61 	77    	16.6887 	8.61015	-8.81968	21.3578
+62 	81    	18.1358 	7.93244	-12.0418	21.3578
+63 	82    	18.3784 	7.14057	-8.71817	21.3578
+64 	78    	18.6672 	6.88962	-12.0644	21.3578
+65 	67    	17.6733 	7.96613	-8.78394	21.3578
+66 	76    	18.3648 	6.52527	-2.68091	21.3578
+67 	81    	17.9689 	7.91642	-12.0935	21.3578
+68 	81    	15.0394 	10.3714	-13.7033	21.3578
+69 	72    	17.5666 	8.33229	-11.9894	21.3578
+70 	65    	18.4557 	7.373  	-10.3417	21.3578
+71 	81    	19.2931 	5.88936	-8.15292	21.3578
+72 	78    	18.3174 	7.42708	-12.0905	21.3578
+73 	79    	18.6739 	6.42276	-2.78242	21.3578
+74 	63    	19.8795 	4.63426	0       	21.3578
+75 	72    	17.4816 	8.22262	-8.26263	21.3578
+76 	64    	18.8904 	6.24091	-7.35629	21.3578
+77 	84    	18.4189 	7.28401	-13.6611	21.3578
+78 	81    	17.4242 	9.11472	-12.0583	21.3578
+79 	77    	16.8748 	9.06676	-12.2131	21.3578
+80 	69    	16.4464 	9.39599	-13.6975	21.3578
+
+**** Pepper 127x127
+***** RAW Deap
+gen	nevals	avg     	std    	min     	max    
+0  	100   	0.217695	9.56908	-14.9456	20.4736
+1  	80    	4.87349 	7.99552	-13.0439	20.4736
+2  	73    	7.89057 	7.78832	-14.4866	20.4586
+3  	84    	10.8781 	6.44003	-12.8828	20.4684
+4  	67    	12.9959 	6.04465	-12.8401	20.48  
+5  	67    	14.654  	5.96448	-8.24525	20.4793
+6  	76    	14.6938 	7.41872	-9.10396	20.4735
+7  	65    	15.178  	7.86488	-14.6292	20.4821
+8  	70    	16.1568 	7.5341 	-14.6442	20.4821
+9  	76    	16.1605 	8.15379	-14.5562	20.5045
+10 	75    	16.6598 	8.14145	-12.8364	20.5045
+11 	77    	16.0052 	8.74634	-14.9964	20.4784
+12 	70    	16.7604 	7.87326	-14.7641	20.4784
+13 	81    	16.4439 	7.91401	-12.8958	20.4942
+14 	80    	16.0664 	8.22129	-10.9626	20.4917
+15 	70    	16.8269 	6.74044	-3.6455 	20.4965
+^[[1;3D16 	80    	17.8573 	6.62798	-11.0035	20.5007
+17 	79    	15.2986 	9.65473	-12.9732	20.5007
+18 	80    	14.8579 	9.39865	-14.9148	20.5007
+19 	80    	16.4507 	7.92114	-14.9228	20.5007
+20 	69    	18.5563 	5.53152	-12.8726	20.5007
+21 	72    	18.4637 	6.27723	-9.68669	20.5007
+22 	82    	17.9139 	6.94628	-14.8686	20.5052
+23      70    	18.1431 	5.86549	0       	20.5052
+24 	80    	17.2433 	7.18052	-9.05007	20.5007
+25 	79    	17.1069 	8.20345	-14.8816	20.4852
+26 	79    	16.9181 	7.45161	-14.6758	20.4864
+27 	82    	17.8602 	6.48916	-8.27283	20.4864
+28 	80    	17.2434 	7.94163	-14.4935	20.4818
+29 	94    	17.3954 	7.09227	-12.723 	20.4781
+30 	67    	17.7646 	6.49854	-12.928 	20.4781
+31 	82    	14.0795 	10.0991	-12.9369	20.4899
+32 	80    	16.0246 	8.43624	-12.8837	20.4899
+33 	78    	16.8117 	8.43537	-14.6882	20.4902
+34 	80    	17.7601 	6.67959	-8.27695	20.4753
+35 	63    	17.5798 	7.32769	-14.4836	20.4772
+36 	76    	17.0964 	7.9573 	-14.8922	20.4801
+37 	86    	16.568  	8.08934	-12.9884	20.4972
+38 	72    	16.494  	8.00095	-12.8791	20.4972
+39 	76    	16.5422 	8.14845	-12.8112	20.4972
+40 	70    	17.9048 	6.45039	-8.10064	20.4777
+41 	70    	17.2777 	6.94235	-3.63618	20.4777
+42 	84    	17.1406 	7.13857	-9.06527	20.4862
+43 	82    	17.6071 	7.5258 	-11.1299	20.491 
+44 	74    	18.6773 	5.02397	-3.56118	20.491 
+45 	79    	17.6121 	6.77874	-3.69343	20.4749
+46 	72    	17.7424 	7.20947	-12.7681	20.4799
+47 	76    	17.2216 	7.96638	-12.8331	20.4828
+48 	80    	17.6477 	7.22785	-12.8862	20.4908
+49 	76    	17.0813 	7.61406	-13.1483	20.4908
+50 	82    	16.1704 	7.71713	-12.8424	20.4908
+51 	82    	17.0957 	6.75532	-3.63454	20.4908
+52 	76    	16.969  	7.93436	-12.8857	20.4902
+53 	72    	17.5002 	7.57382	-14.9197	20.4902
+54 	69    	17.2656 	8.09136	-12.9533	20.4814
+55 	79    	16.3336 	9.08077	-12.929 	20.4829
+56 	83    	16.9537 	7.97209	-12.8396	20.492 
+57 	69    	18.0608 	6.6892 	-8.94777	20.492 
+58 	84    	18.6144 	5.31537	-8.29815	20.4866
+59 	77    	18.0264 	5.8317 	-3.61948	20.4915
+60 	77    	18.2119 	6.59406	-10.7267	20.5006
+61 	82    	18.1437 	6.71168	-11.3282	20.4853
+62 	80    	17.9627 	6.50451	-13.0799	20.4948
+63 	80    	17.4666 	7.24307	-8.35372	20.4953
+64 	78    	17.6147 	7.05755	-8.25952	20.49  
+65 	81    	17.7828 	6.83425	-12.8917	20.4893
+66 	84    	16.9515 	8.13829	-12.8393	20.4933
+67 	71    	17.9315 	6.18649	-8.16397	20.4872
+68 	75    	16.3247 	8.38497	-12.9519	20.4894
+69 	87    	15.8604 	8.71143	-14.6032	20.4894
+70 	79    	16.0582 	8.07539	-9.07139	20.4861
+71 	78    	16.304  	7.99825	-12.836 	20.4781
+72 	77    	16.646  	8.21923	-12.7221	20.4936
+73 	74    	16.2653 	8.57091	-12.8966	20.495 
+74 	78    	16.126  	8.2472 	-12.9872	20.4785
+75 	83    	16.9707 	6.84591	-9.59106	20.4908
+76 	81    	14.8944 	9.44231	-14.9177	20.4908
+77 	80    	17.1956 	6.70875	-3.61924	20.4908
+78 	78    	17.1565 	7.02479	-14.5898	20.4908
+79 	84    	17.9077 	6.54014	-14.8907	20.4908
+80 	81    	17.7239 	7.67265	-14.7971	20.4867
+
+**** Pepper 140x140
+***** RAW Deap
+gen	nevals	avg       	std    	min     	max    
+0  	100   	-0.0482758	6.87955	-13.8331	15.0359
+1  	80    	2.82606   	5.90317	-13.5087	15.0093
+2  	75    	4.19647   	6.34839	-13.9457	15.0324
+3  	64    	6.56254   	6.22126	-13.7204	15.0555
+4  	81    	7.22449   	6.83955	-13.7422	15.0647
+5  	79    	9.72      	5.76878	-14.0279	15.0727
+6  	75    	9.42082   	7.1155 	-13.9114	15.0973
+7  	72    	10.2228   	6.45351	-11.7548	15.0737
+8  	75    	11.3773   	6.29224	-11.9521	15.0783
+9  	84    	11.9117   	6.65975	-13.7957	15.0775
+10 	92    	12.2183   	6.47803	-13.7815	15.1106
+11 	85    	12.153    	6.14407	-11.8099	15.0803
+12 	72    	12.9727   	5.07136	0       	15.0803
+13 	84    	11.8712   	6.62293	-9.13133	15.0777
+14 	77    	10.738    	7.08196	-9.11737	15.0743
+15 	72    	12.0437   	6.40889	-9.09181	15.0925
+16 	76    	12.1535   	6.4547 	-13.6382	15.0909
+17 	83    	11.5823   	6.90465	-12.0163	15.0818
+18 	80    	10.648    	7.86207	-11.7138	15.0795
+19 	82    	11.9465   	6.25175	-8.8576 	15.0795
+20 	79    	12.0544   	6.39418	-11.9033	15.0755
+21 	85    	11.9451   	6.39837	-9.09371	15.0724
+22 	65    	12.165    	6.16804	-9.16766	15.0813
+23 	78    	13.2285   	4.4105 	0       	15.0813
+24 	79    	11.2433   	7.46851	-11.7485	15.0788
+25 	82    	11.3759   	7.39042	-11.9665	15.0916
+26 	70    	12.7611   	4.94726	0       	15.0916
+27 	72    	11.8198   	6.40075	-9.11113	15.0788
+28 	77    	13.2248   	4.97958	-13.7044	15.0788
+29 	81    	12.4136   	6.02869	-11.6153	15.095 
+30 	86    	12.23     	6.11069	-13.6885	15.0727
+31 	74    	12.6857   	6.03261	-11.6922	15.0777
+32 	78    	13.1645   	5.43258	-14.0676	15.0777
+33 	73    	12.2394   	6.68882	-13.8803	15.0705
+34 	78    	11.6628   	7.28221	-13.5326	15.0749
+35 	85    	11.8021   	6.69375	-11.6177	15.0734
+36 	89    	11.5215   	6.86371	-11.8614	15.0836
+37 	69    	12.7035   	5.65196	-9.03246	15.0902
+38 	84    	11.6817   	6.36014	-9.08564	15.0902
+39 	80    	12.2267   	6.15112	-11.9588	15.0902
+40 	77    	11.6215   	7.14471	-13.7626	15.0902
+41 	86    	10.4553   	7.94771	-13.8079	15.0902
+42 	76    	11.049    	7.16505	-9.08324	15.079 
+43 	78    	10.9854   	7.78465	-13.6364	15.0791
+44 	72    	12.0013   	6.03184	-9.18212	15.0791
+45 	82    	11.7417   	6.77889	-13.6834	15.098 
+46 	75    	12.2898   	6.55944	-13.5021	15.0744
+47 	81    	12.4478   	5.65417	-9.07455	15.0777
+48 	75    	11.8061   	6.49796	-9.06622	15.0858
+49 	76    	13.5822   	4.17778	-8.94583	15.086 
+50 	70    	12.0741   	6.57193	-13.6267	15.0777
+51 	80    	12.8221   	6.1045 	-13.5377	15.0738
+52 	78    	11.9951   	6.79215	-13.7969	15.0766
+53 	89    	13.0158   	5.05283	-8.76451	15.0794
+54 	70    	12.0723   	6.46674	-13.9148	15.0775
+55 	77    	12.9728   	5.35635	-11.7915	15.0775
+56 	68    	11.3964   	7.53329	-9.09549	15.0775
+57 	82    	11.7291   	6.59799	-9.09157	15.0775
+58 	75    	12.4494   	6.06584	-9.09179	15.0775
+59 	69    	13.2931   	5.1648 	-11.886 	15.078 
+60 	76    	13.117    	5.49541	-9.09179	15.078 
+61 	78    	11.7786   	7.30014	-13.7403	15.078 
+62 	78    	12.7831   	5.08636	0       	15.078 
+63 	79    	12.7403   	5.76386	-11.7741	15.0872
+64 	75    	13.2512   	5.10882	-13.5192	15.0872
+65 	77    	12.8262   	5.58797	-13.8088	15.0872
+66 	78    	13.1328   	5.07267	-12.074 	15.0872
+67 	83    	11.6689   	6.70212	-12.0281	15.0872
+68 	70    	12.0477   	6.16035	-9.08012	15.0872
+69 	76    	11.9338   	6.92826	-11.7393	15.0872
+70 	73    	12.7121   	5.93199	-9.07971	15.0893
+71 	83    	12.6804   	6.28467	-13.9932	15.0893
+72 	77    	10.9842   	7.82406	-13.7833	15.0893
+73 	78    	11.7187   	6.96911	-13.4778	15.0893
+74 	78    	13.3544   	4.5418 	0       	15.0893
+75 	81    	11.6039   	6.84635	-13.7756	15.0887
+76 	74    	12.503    	5.91821	-11.8476	15.0887
+77 	81    	13.7038   	4.31257	-9.08691	15.0887
+78 	75    	13.4976   	4.34762	0       	15.0872
+79 	89    	12.5848   	6.16489	-11.9744	15.0872
+80 	76    	12.1573   	5.90255	-9.09878	15.0872
+
+**** Pepper 162x162
+***** RAW Deap
+gen	nevals	avg      	std   	min     	max    
+0  	100   	0.0217284	3.4678	-13.2675	9.19835
+1  	79    	0.919075 	2.75723	0       	9.21652
+2  	87    	1.34936  	4.39993	-13.1878	9.21557
+3  	76    	2.25581  	4.29891	-12.9697	9.2187 
+4  	85    	1.54899  	5.13968	-13.1744	9.21628
+5  	86    	2.67403  	4.82252	-13.208 	9.21468
+6  	81    	3.64325  	5.38392	-13.2323	9.21468
+7  	85    	4.10644  	5.44025	-13.1445	9.23117
+8  	81    	4.52538  	5.71872	-13.1681	9.21979
+9  	83    	5.96459  	4.37685	0       	9.22151
+10 	78    	6.03403  	5.27169	-13.1617	9.23257
+11 	77    	5.98149  	5.00573	-13.2084	9.23956
+12 	74    	6.21766  	5.21475	-13.2062	9.23956
+13 	74    	7.58025  	3.88142	-13.1428	9.24047
+14 	78    	8.35719  	2.62832	0       	9.23257
+15 	76    	6.92447  	5.77817	-13.2805	9.23257
+16 	87    	7.22473  	4.8001 	-13.308 	9.23241
+17 	75    	7.10139  	5.14591	-13.1472	9.23257
+18 	79    	7.6252   	3.451  	0       	9.23241
+19 	74    	6.98312  	3.92423	0       	9.24343
+20 	73    	7.13324  	4.19683	-13.0632	9.24343
+21 	85    	7.19831  	5.11007	-13.2125	9.24343
+22 	80    	7.53842  	3.53198	0       	9.24343
+23 	70    	7.32852  	4.74348	-13.2454	9.23106
+24 	73    	7.1501   	4.83835	-13.2306	9.23257
+25 	80    	5.75793  	6.56936	-13.208 	9.23398
+26 	77    	6.54153  	4.81406	-13.1418	9.23398
+27 	78    	6.85328  	4.36303	-13.3287	9.24379
+28 	78    	7.81571  	3.28332	0       	9.24379
+29 	80    	7.04504  	4.25259	-13.0564	9.24318
+30 	66    	7.28008  	4.45524	-13.2318	9.26379
+31 	79    	6.72786  	4.73641	-13.1641	9.23821
+32 	78    	7.32725  	4.74861	-13.3029	9.24192
+33 	76    	7.09097  	4.56677	-13.3029	9.24192
+34 	80    	7.09443  	4.56767	-13.2997	9.24192
+35 	76    	6.7243   	4.74976	-13.2525	9.24192
+36 	73    	6.89501  	3.98091	0       	9.24192
+37 	69    	5.41338  	5.92202	-13.2389	9.23821
+38 	81    	6.02685  	4.69067	-13.129 	9.26134
+39 	79    	6.0553   	5.79653	-13.2097	9.24318
+40 	75    	6.18767  	5.49434	-13.1208	9.23874
+41 	69    	6.96036  	4.93095	-13.2504	9.24759
+42 	78    	7.27377  	4.45694	-13.2817	9.24452
+43 	81    	7.00322  	4.60816	-13.1786	9.24898
+44 	69    	7.50071  	3.95568	-13.143 	9.24898
+45 	78    	6.9003   	3.98393	0       	9.24192
+46 	72    	7.5444   	3.53477	0       	9.24192
+47 	84    	6.85926  	4.35874	-13.1829	9.24989
+48 	78    	6.32475  	5.19729	-13.2212	9.24989
+49 	63    	7.51028  	3.95079	-12.9831	9.24989
+50 	79    	6.83444  	4.70149	-13.1983	9.24989
+51 	71    	7.7034   	3.81147	-12.974 	9.24989
+52 	87    	6.51416  	5.12095	-13.1061	9.24759
+53 	72    	7.45552  	3.61096	0       	9.24759
+54 	78    	7.28845  	4.4504 	-13.1466	9.24759
+55 	81    	6.85613  	5.81312	-13.3767	9.24249
+56 	77    	7.10539  	4.56682	-13.2986	9.24571
+57 	74    	7.51618  	3.96321	-13.1585	9.24759
+58 	82    	6.97755  	4.92702	-13.1454	9.24989
+59 	78    	6.42667  	5.15783	-13.1113	9.24898
+60 	71    	7.38417  	4.39924	-13.2258	9.26379
+61 	82    	7.295    	4.45303	-13.1475	9.26379
+62 	88    	7.213    	5.11397	-13.1865	9.24515
+63 	79    	6.55572  	4.81102	-12.9972	9.24571
+64 	79    	7.51473  	3.95317	-12.9917	9.24571
+65 	72    	6.61018  	5.09461	-13.1444	9.24405
+66 	83    	7.18282  	3.81476	0       	9.24515
+67 	74    	6.51717  	5.12263	-13.1306	9.24515
+68 	83    	6.42102  	5.16842	-13.2216	9.24515
+69 	73    	7.0643   	4.90297	-13.2527	9.24515
+70 	79    	7.42109  	4.01838	-12.9864	9.24515
+71 	75    	7.02068  	4.6101 	-13.0918	9.24515
+72 	81    	6.96477  	4.31677	-13.1811	9.24515
+73 	85    	6.74664  	4.74384	-13.1116	9.24515
+74 	76    	6.61789  	5.0983 	-13.1782	9.24515
+75 	71    	7.4686   	3.61729	0       	9.24515
+76 	73    	7.46915  	3.61755	0       	9.24515
+77 	65    	6.74759  	4.74401	-13.1581	9.24898
+78 	82    	6.82657  	4.0465 	0       	9.24898
+79 	79    	6.41451  	4.58093	-13.2582	9.24898
+80 	83    	6.48551  	5.42836	-13.165 	9.24898
+
+**** Pepper 180x180
+***** RAW Deap
+	 gen	nevals	avg     	std    	min     	max    
+0  	100   	0.353626	2.43694	-14.0956	8.25815
+1  	81    	0.461476	3.13689	-14.036 	8.28829
+2  	78    	0.0148241	3.55537	-14.1063	8.25067
+3  	76    	0.601472 	2.78092	-14.0597	8.26131
+4  	82    	0.957949 	3.63999	-14.0485	8.2878 
+5  	79    	1.97984  	3.52315	0       	8.28755
+6  	71    	1.75829  	3.80981	-13.952 	8.28755
+7  	78    	2.58353  	4.21668	-14.0389	8.28755
+8  	87    	3.1013   	4.7156 	-14.0685	8.28755
+9  	77    	4.17423  	4.82733	-14.1288	8.29834
+10 	77    	4.77638  	5.09857	-14.1017	8.29834
+11 	72    	5.76891  	4.86899	-14.0384	8.29834
+12 	87    	5.41263  	4.65666	-14.1123	8.29834
+13 	79    	5.9938   	4.44792	-14.0189	8.29834
+14 	75    	6.15621  	4.38689	-14.1578	8.29834
+15 	78    	6.51214  	4.56011	-14.1632	8.29834
+16 	78    	7.51283  	2.36275	0       	8.29834
+17 	79    	6.16132  	4.37979	-14.0471	8.29834
+18 	70    	7.34673  	2.58292	0       	8.29834
+19 	80    	6.56848  	4.15701	-14.0165	8.29834
+20 	81    	6.5462   	3.78105	-13.9933	8.29834
+21 	78    	6.85124  	3.1007 	0       	8.29834
+22 	73    	6.38425  	3.88384	-14.0042	8.29834
+23 	78    	6.0408   	5.09362	-14.1222	8.29834
+24 	87    	6.40346  	4.25213	-14.0683	8.29834
+25 	86    	5.82747  	4.51751	-14.0571	8.29834
+26 	77    	5.13374  	5.3343 	-14.0213	8.29512
+27 	75    	5.90825  	4.48631	-14.1061	8.29512
+28 	66    	6.26737  	4.66974	-14.0396	8.29852
+29 	81    	6.18342  	4.71347	-14.1042	8.29852
+30 	77    	6.21681  	3.97533	-14.0279	8.29852
+31 	81    	6.26393  	4.67576	-14.098 	8.30399
+32 	77    	6.20795  	5.02379	-14.0922	8.29852
+33 	80    	5.77198  	4.87495	-14.1094	8.29852
+34 	76    	5.98438  	5.41272	-14.1162	8.29852
+35 	80    	5.79572  	5.17093	-14.0657	8.28875
+36 	78    	7.01772  	2.94809	0       	8.30399
+37 	78    	6.5453   	3.78582	-14.0812	8.29272
+38 	70    	6.51671  	4.55195	-14.0804	8.29272
+39 	86    	6.38194  	3.88356	-14.0185	8.29373
+40 	72    	6.38241  	3.88859	-14.1022	8.29439
+41 	77    	6.15877  	4.37648	-14.0194	8.2886 
+42 	79    	6.56989  	4.16013	-14.023 	8.28957
+43 	79    	5.99123  	4.44742	-14.0415	8.28957
+44 	79    	5.93516  	4.81041	-14.0877	8.30265
+45 	80    	6.62835  	3.72719	-14.0004	8.29451
+46 	78    	6.87712  	3.5512 	-14.0364	8.29451
+47 	76    	6.62971  	3.72812	-14.0058	8.29013
+48 	73    	5.60686  	4.9223 	-14.0426	8.29451
+49 	73    	6.20919  	5.01539	-14.0603	8.2983 
+50 	81    	6.21942  	3.9768 	-14.0304	8.2983 
+51 	75    	6.1878   	4.70352	-14.0116	8.31159
+52 	77    	6.68952  	3.23994	0       	8.31159
+53 	76    	6.3023   	3.93482	-14.0721	8.31159
+54 	82    	5.85848  	4.83665	-14.0055	8.3052 
+55 	84    	5.6365   	5.22076	-14.0726	8.31159
+56 	80    	4.91624  	5.66049	-14.0647	8.31159
+57 	80    	5.91141  	4.4868 	-14.0706	8.31159
+58 	76    	7.01951  	2.94884	0       	8.31159
+59 	71    	6.3856   	3.88531	-14.0182	8.31159
+60 	71    	6.73893  	4.06096	-14.0422	8.31159
+61 	77    	6.69199  	3.24113	0       	8.31159
+62 	83    	6.6601   	4.11747	-14.0595	8.28186
+63 	77    	6.55084  	3.78289	-13.9892	8.29316
+64 	83    	5.77183  	4.87367	-14.1383	8.28618
+65 	79    	5.63417  	5.21602	-14.0283	8.30005
+66 	82    	5.49371  	5.5573 	-14.1015	8.2963 
+67 	78    	5.3829   	5.29413	-14.1533	8.2963 
+68 	74    	5.96741  	5.11322	-14.0807	8.29853
+69 	72    	5.97556  	4.09943	-14.0263	8.31523
+70 	88    	5.99853  	4.45773	-14.1076	8.30254
+71 	80    	5.76918  	4.87798	-14.152 	8.30254
+72 	82    	5.9974   	4.45403	-14.0482	8.30254
+73 	77    	5.55361  	5.2422 	-14.065 	8.30254
+74 	72    	6.63395  	3.73204	-14.0406	8.30254
+75 	77    	5.66012  	5.51059	-14.1142	8.30254
+76 	77    	5.85722  	4.84562	-14.0902	8.30254
+77 	76    	5.80762  	4.16845	-14.03  	8.29686
+78 	74    	6.16237  	4.37697	-14.0588	8.31054
+79 	84    	6.46787  	3.8303 	-13.9197	8.30088
+80 	74    	7.18503  	2.77747	0       	8.30088
+
+** TODOs														   :noexport:
+*** TODO Scanner
+*** DONE Bit Converter
+1. np.unpackbits
+2. bitarray(mat.tolist())
+3. Embedding
+	3.1. Get the mask
+	3.2. Complement mask and make logic and
+   	3.3. Take n bits 
+	3.4. Embed making logic or
+4. np.packbits(ba.tolist())
+*** DONE Bit embedder with chromosome
+*** DONE Bit decoder
+*** DONE Genetic Algorithm and chromosomes
+*** DONE Fitness function
+*** TODO Embed chromosome and shape into stego image
+*** DONE BUGFIX: The decoded array is not properly decoded
+*** DONE Stego image have lot of artifacts
+*** DONE Fitness function have a lot of 100%
+Impossible apply the mean after square the pixels. Do the square to a =uint= matrix cause all these values being set to 0. Also the =uint= format has no sign. So the mean square error can not be applied.
+*** DONE The individual length is 56. It's supposed to be 26.
+The unpackbits is messing all, because not all the parameters have to be represented by 8 bits
+*** TODO Mate operator produce invariant individuals
+* Resultados
+Se ha hecho la misma prueba que en cite:kanan2014novel. Se ha utilizado la imagen de =Lenna= con un tamaño de =256x256= para embeber las imágenes de =Baboon=, =Jet= y =Pepper= con los siguientes tamaños: =64x64=, =81x81=, =127x127=, =140x140=, =162x162=, =180x180=. Figura ref:fig:test-imgs.
+
+#+CAPTION: Fitness durante la evolución. Mensajes secretos (64x64)
+#+ATTR_LATEX: :width \textwidth :placement [H]
+#+NAME: fig:test-imgs
+[[file:report/test-imgs.png]]
+
+Se ejecuto el software sobre las imágenes de la Figura ref:fig:test-imgs con los parámetros de la tabla ref:tab:params. Se eligieron estos parámetros, por que se consigue un resultado parecido con los parámetros utilizados en cite:kanan2014novel. 
+
+#+NAME: tab:params
+#+CAPTION: Parametros utilizados en los tests
+|----------------+------|
+| Generaciones   |   80 |
+| Prob. Cruce    |  0.7 |
+| Prob. Mutacion | 0.25 |
+|----------------+------|
+
+#+NAME: tab:results
+#+CAPTION: Tabla de resultados maximos obtenidos
+|----------+----------------------+---+----------+-------+--------|
+| Capacity |                      |   | PSNR (%) |       |        |
+|----------+----------------------+---+----------+-------+--------|
+|        % | bpp (bits per pixel) |   |   Baboon |   Jet | Pepper |
+|----------+----------------------+---+----------+-------+--------|
+|     6.25 |                 0.50 |   |    30.38 | 30.17 |  30.16 |
+|     10.0 |                 0.80 |   |    28.27 | 28.13 |  28.12 |
+|     20.1 |                 1.61 |   |    21.64 | 20.97 |  21.38 |
+|     24.6 |                 1.96 |   |    20.73 | 20.10 |  20.51 |
+|     29.9 |                 2.39 |   |    15.31 | 15.12 |  15.11 |
+|     40.0 |                 3.20 |   |     9.61 |  8.92 |   9.26 |
+|     49.4 |                 3.95 |   |     8.67 |  7.96 |   8.32 |
+|----------+----------------------+---+----------+-------+--------|
+
+En tabla ref:tab:results puede verse los fitness de los mejores individuos encontrados por cada imagen. Como puede observarse, los resultados obtenidos son peores que los conseguidos por los autores de cite:kanan2014novel. Estos resultados pueden ser debidos a que en cite:kanan2014novel se implementan 16 direcciones de escaneo, mientras que en este trabajo solo la mitad, por lo que la búsqueda de soluciones queda mas limitada. En las Figuras ref:fig:64 y ref:fig:180 puede verse la evolución del fitness de la población en cada generación del algoritmo genético. Se observa que cuando el mensaje secreto es mas pequeño, el algoritmo, a pesar de la rápida convergencia, es capaz de encontrar un individuo mejor que los encontrados en la población inicial. Cuando el mensaje secreto es mas largo, el algoritmo genético encuentra un individuo muy cercano al optimo en la población inicial y este mejora muy poco en comparación con el anterior.
+
+#+CAPTION: Fitness durante la evolución. Mensajes secretos (64x64)
+#+ATTR_LATEX: :width \textwidth :placement [H]
+#+NAME: fig:64
+[[file:report/plots/64x64.png]]
+
+#+CAPTION: Fitness durante la evolución. Mensajes secretos (180x180)
+#+ATTR_LATEX: :width \textwidth :placement [H]
+#+NAME: fig:180
+[[file:report/plots/180x180.png]]
+
+* Referencias
+bibliographystyle:abbrv
+bibliography:~/Drive/org/bibliography/main.bib
