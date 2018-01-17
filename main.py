@@ -44,7 +44,7 @@ def decode(stego, s_shape, chromosome):
     	stego: stego image
     	s_shape: secret message shape
     	chromosome: solution chromosome
-    
+
     Return:
     	np.array: the secret message
     """
@@ -75,7 +75,7 @@ def imshow(host, stego, secret):
 
 def init_chromosome():
     return creator.Individual(helper_individual.init_chromosome())
-                                                          
+
 def cxTwoPointCopy(ind1, ind2):
     """Execute a two points crossover with copy on the input individuals. The
     copy is required because the slicing in numpy returns a view of the data,
@@ -93,27 +93,35 @@ def cxTwoPointCopy(ind1, ind2):
 
     ind1[cxpoint1:cxpoint2], ind2[cxpoint1:cxpoint2] \
         = ind2[cxpoint1:cxpoint2].copy(), ind1[cxpoint1:cxpoint2].copy()
-        
+
     return ind1, ind2
+
+def setup_deap_individuals():
+    # Define the individuals
+    creator.create('FitnessMax', base.Fitness, weights=(1.0,))
+    creator.create('Individual', np.ndarray, fitness=creator.FitnessMax)
 
 def main():
     ap = argparse.ArgumentParser()
 
     ap.add_argument('-ht', '--host', required=True)
     ap.add_argument('-s', '--secret', required=True)
+    ap.add_argument('-g', '--generations', default=80, type=int)
+    ap.add_argument('-p', '--population', default=100, type=int)
+    ap.add_argument('-c', '--crossover', default=0.7, type=int)
+    ap.add_argument('-m', '--mutation', default=0.25, type=int)
 
     args = vars(ap.parse_args())
 
-    NGEN, NPOP = 200, 300
-    CXPB, MUTPB = 0.7, 0.04
+    NGEN, NPOP, LAMBDA = args['generations'], args['population'], 100
+    CXPB, MUTPB = args['crossover'], args['mutation']
+    ICXPB, IMUTPB = 0.5, 0.2
 
     # Convert to grayscale: http://pillow.readthedocs.io/en/5.0.0/handbook/concepts.html#concept-modes
     host = np.array(Image.open(args['host']).convert('L'))
     secret = np.array(Image.open(args['secret']).convert('L'))
 
-    # Define the individuals
-    creator.create('FitnessMax', base.Fitness, weights=(1.0,))
-    creator.create('Individual', np.ndarray, fitness=creator.FitnessMax)
+    setup_deap_individuals()
 
     toolbox = base.Toolbox()
 
@@ -124,7 +132,7 @@ def main():
     # Genetic operators
     toolbox.register('evaluate', fitness, stego=host, secret=secret)
     toolbox.register('mate', cxTwoPointCopy)
-    toolbox.register('mutate', tools.mutFlipBit, indpb=0.05)
+    toolbox.register('mutate', tools.mutFlipBit, indpb=IMUTPB)
     toolbox.register('select', tools.selTournament, tournsize=2)
 
     pop = toolbox.population(n=NPOP)
@@ -137,8 +145,7 @@ def main():
     stats.register('min', np.min)
     stats.register('max', np.max)
 
-    pop, logbook = algorithms.eaSimple(pop, toolbox, cxpb=CXPB, mutpb=MUTPB, ngen=NGEN, stats=stats,
-                        halloffame=hof)
+    pop, logbook = algorithms.eaSimple(pop, toolbox, cxpb=CXPB, mutpb=MUTPB, ngen=NGEN, stats=stats, halloffame=hof)
 
     # Embed secret image using the best individual
     stego = embed(host, secret, hof.items[0])
@@ -150,7 +157,7 @@ def main():
 
 if __name__ == '__main__':
     host, stego, secret, pop, stats, logbook, hof = main()
-    vars = {
+    attrs = {
         'host' : host,
         'stego' : stego,
         'secret' : secret,
