@@ -3,7 +3,7 @@ import numpy as np
 
 class MatScanner:
     """Returns a 1-Dimensional pixel sequence giving the starting point and
-    direaction.
+    direction.
     """
 
     class Direction(Enum):
@@ -15,6 +15,48 @@ class MatScanner:
         down_left = 5
         up_right = 6
         up_left = 7
+
+    @staticmethod
+    def _zig_zag(mat, axis=0):
+        """Computes the no row-jump or column-jump order for the 8 last directions.
+
+        Example: 
+        >>> mat = np.arange(9).reshape(3, 3)
+        array([[0, 1, 2],
+               [3, 4, 5],
+               [6, 7, 8]])
+        
+        >>> _zig_zag(mat)
+        array([[0, 1, 2],
+               [5, 4, 3],
+               [6, 7, 8]])
+
+        >>> _zig_zag(mat, 1)
+        array([[0, 7, 2],
+               [5, 4, 3],
+               [6, 1, 8]])
+        
+        Args:
+        	mat: matrix
+        	axis: matrix flip axis
+        """
+        if axis == 0:
+            b_size = mat.shape[1]
+            order = 'C'
+
+        elif axis == 1:
+            b_size = mat.shape[0]
+            order = 'F'
+
+        else:
+            return None
+
+        it = np.nditer(mat, flags=['external_loop', 'buffered'], order=order,
+                       op_flags=['readwrite'], buffersize=b_size)
+
+        while it.iternext():
+            if (it.iterindex / b_size) % 2 == 1:
+                it.value[...] = np.flip(it.value, 0)
 
     @staticmethod
     def _raster_scan(mat, y, x, shape):
