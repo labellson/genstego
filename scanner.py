@@ -15,6 +15,7 @@ class MatScanner:
         down_left = 5
         up_right = 6
         up_left = 7
+        z_raster = 8
 
     @staticmethod
     def _zig_zag(mat, axis=0):
@@ -189,8 +190,58 @@ class MatScanner:
         return np.flip(np.flip(reshape, 1), 0)
 
     @classmethod
+    def _z_scan(cls, img, y, x, direction):
+        """This method returns the flattened pixel sequence given the starting
+        point an direction using the no row-jump or column-jump order.
+        
+        Args:
+        	img: raw image (np.array)
+        	y: starting row 
+        	x: starting column
+        	direction: scan direction
+
+        Return:
+        	numpy.array
+        """
+        if direction == cls.Direction.z_raster:
+            img = np.roll(img, -y * img.shape[1])
+            cls._zig_zag(img)
+            img = np.roll(img , -x)
+
+        else:
+            return img
+
+        if direction == cls.Direction.z_raster:
+            return cls.scan(img, 0, 0, cls.Direction.raster)
+
+    @classmethod
+    def _un_z_scan(cls, img, shape, y, x, direction):
+        """Returns the reshaped array given the direction using the no row-jump
+        or column-jump directions.
+        
+        Args:
+        	img: flattened image (np.array)
+        	shape: Shape of array
+        	y: starting row
+        	x: starting column
+        	direction: scan direction
+        
+        Return:
+        	numpy.array
+        """
+        if direction == cls.Direction.z_raster:
+            img = cls.reshape(img, shape, 0, 0, cls.Direction.raster)
+
+        if direction == cls.Direction.z_raster:
+            img = np.roll(img, x)
+            cls._zig_zag(img)
+            img = np.roll(img, y * shape[1])
+
+        return img
+
+    @classmethod
     def scan(cls, img, y, x, direction):
-        """This method return the flattened pixel sequence given the starting
+        """This method returns the flattened pixel sequence given the starting
         point and direction.
        
         Args:
@@ -219,6 +270,8 @@ class MatScanner:
             return cls._up_right(img, y, x, img.shape)
         elif direction == cls.Direction.up_left:
             return cls._up_left(img, y, x, img.shape)
+        elif direction == cls.Direction.z_raster:
+            return cls._z_scan(img, y, x, direction)
 
     @classmethod
     def scan_genetic(cls, img, chromosome):
@@ -265,6 +318,8 @@ class MatScanner:
             return cls._un_up_right(img, y, x, shape)
         elif direction == cls.Direction.up_left:
             return cls._un_up_left(img, y, x, shape)
+        elif direction == cls.Direction.z_raster:
+            return cls._un_z_scan(img, shape, y, x, direction)
 
     @classmethod
     def reshape_genetic(cls, img, shape, chromosome):
@@ -322,4 +377,9 @@ if __name__ == '__main__':
     mat_scanned = MatScanner.scan(mat, 1, 2, MatScanner.Direction.up_left)
     print('\n- Up Right order: {}'.format(mat_scanned))
     mat_reshaped = MatScanner.reshape(mat_scanned, mat.shape, 1, 2, MatScanner.Direction.up_left)
+    print('- Original: \n{}'.format(mat_reshaped))
+
+    mat_scanned = MatScanner.scan(mat, 1, 3, MatScanner.Direction.z_raster)
+    print('\n- Zig Zag Raster order: {}'.format(mat_scanned))
+    mat_reshaped = MatScanner.reshape(mat_scanned, mat.shape, 1, 3, MatScanner.Direction.z_raster)
     print('- Original: \n{}'.format(mat_reshaped))
