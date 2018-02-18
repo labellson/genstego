@@ -16,6 +16,7 @@ class MatScanner:
         up_right = 6
         up_left = 7
         z_raster = 8
+        z_left_down = 11
 
     @staticmethod
     def _zig_zag(mat, axis=0):
@@ -203,16 +204,19 @@ class MatScanner:
         Return:
         	numpy.array
         """
-        if direction == cls.Direction.z_raster:
+        if (direction == cls.Direction.z_raster
+            or direction == cls.Direction.z_left_down):
+
             img = np.roll(img, -y * img.shape[1])
             cls._zig_zag(img)
-            img = np.roll(img , -x)
 
         else:
             return img
 
         if direction == cls.Direction.z_raster:
-            return cls.scan(img, 0, 0, cls.Direction.raster)
+            return cls.scan(img, 0, x, cls.Direction.raster)
+        elif direction == cls.Direction.z_left_down:
+            return cls.scan(img, 0, x, cls.Direction.left_down)
 
     @classmethod
     def _un_z_scan(cls, img, shape, y, x, direction):
@@ -230,10 +234,13 @@ class MatScanner:
         	numpy.array
         """
         if direction == cls.Direction.z_raster:
-            img = cls.reshape(img, shape, 0, 0, cls.Direction.raster)
+            img = cls.reshape(img, shape, 0, x, cls.Direction.raster)
+        elif direction == cls.Direction.z_left_down:
+            img = cls.reshape(img, shape, 0, x, cls.Direction.left_down)
 
-        if direction == cls.Direction.z_raster:
-            img = np.roll(img, x)
+        if (direction == cls.Direction.z_raster
+            or direction == cls.Direction.z_left_down):
+
             cls._zig_zag(img)
             img = np.roll(img, y * shape[1])
 
@@ -270,7 +277,8 @@ class MatScanner:
             return cls._up_right(img, y, x, img.shape)
         elif direction == cls.Direction.up_left:
             return cls._up_left(img, y, x, img.shape)
-        elif direction == cls.Direction.z_raster:
+        elif (direction == cls.Direction.z_raster
+              or direction == cls.Direction.z_left_down):
             return cls._z_scan(img, y, x, direction)
 
     @classmethod
@@ -318,7 +326,8 @@ class MatScanner:
             return cls._un_up_right(img, y, x, shape)
         elif direction == cls.Direction.up_left:
             return cls._un_up_left(img, y, x, shape)
-        elif direction == cls.Direction.z_raster:
+        elif (direction == cls.Direction.z_raster
+              or direction == cls.Direction.z_left_down):
             return cls._un_z_scan(img, shape, y, x, direction)
 
     @classmethod
@@ -341,45 +350,60 @@ if __name__ == '__main__':
 
     mat_scanned = MatScanner.scan(mat, 0, 3, MatScanner.Direction.raster)
     print('\n- Raster order: {}'.format(mat_scanned))
-    mat_reshaped = MatScanner.reshape(mat_scanned, (2, 5), 0, 3, MatScanner.Direction.raster)
+    mat_reshaped = MatScanner.reshape(mat_scanned, (2, 5), 0, 3,
+                                      MatScanner.Direction.raster)
     print('- Original: \n{}'.format(mat_reshaped))
 
     mat_scanned = MatScanner.scan(mat, 1, 3, MatScanner.Direction.right_up)
     print('\n- Right Up order: {}'.format(mat_scanned))
-    mat_reshaped = MatScanner.reshape(mat_scanned, (2, 5), 1, 3, MatScanner.Direction.right_up)
+    mat_reshaped = MatScanner.reshape(mat_scanned, (2, 5), 1, 3,
+                                      MatScanner.Direction.right_up)
     print('- Original: \n{}'.format(mat_reshaped))
 
     mat_scanned = MatScanner.scan(mat, 1, 2, MatScanner.Direction.left_up)
     print('\n- Left Up order: {}'.format(mat_scanned))
-    mat_reshaped = MatScanner.reshape(mat_scanned, (2, 5), 1, 2, MatScanner.Direction.left_up)
+    mat_reshaped = MatScanner.reshape(mat_scanned, (2, 5), 1, 2,
+                                      MatScanner.Direction.left_up)
     print('- Original: \n{}'.format(mat_reshaped))
 
     mat_scanned = MatScanner.scan(mat, 0, 3, MatScanner.Direction.left_down)
     print('\n- Left Down order: {}'.format(mat_scanned))
-    mat_reshaped = MatScanner.reshape(mat_scanned, (2, 5), 0, 3, MatScanner.Direction.left_down)
+    mat_reshaped = MatScanner.reshape(mat_scanned, (2, 5), 0, 3,
+                                      MatScanner.Direction.left_down)
     print('- Original: \n{}'.format(mat_reshaped))
 
     mat_scanned = MatScanner.scan(mat, 1, 3, MatScanner.Direction.down_right)
     print('\n- Down right order: {}'.format(mat_scanned))
-    mat_reshaped = MatScanner.reshape(mat_scanned, mat.shape, 1, 3, MatScanner.Direction.down_right)
+    mat_reshaped = MatScanner.reshape(mat_scanned, mat.shape, 1, 3,
+                                      MatScanner.Direction.down_right)
     print('- Original: \n{}'.format(mat_reshaped))
 
     mat_scanned = MatScanner.scan(mat, 0, 3, MatScanner.Direction.down_left)
     print('\n- Down left order: {}'.format(mat_scanned))
-    mat_reshaped = MatScanner.reshape(mat_scanned, mat.shape, 0, 3, MatScanner.Direction.down_left)
+    mat_reshaped = MatScanner.reshape(mat_scanned, mat.shape, 0, 3,
+                                      MatScanner.Direction.down_left)
     print('- Original: \n{}'.format(mat_reshaped))
 
     mat_scanned = MatScanner.scan(mat, 0, 2, MatScanner.Direction.up_right)
     print('\n- Up Right order: {}'.format(mat_scanned))
-    mat_reshaped = MatScanner.reshape(mat_scanned, mat.shape, 0, 2, MatScanner.Direction.up_right)
+    mat_reshaped = MatScanner.reshape(mat_scanned, mat.shape, 0, 2,
+                                      MatScanner.Direction.up_right)
     print('- Original: \n{}'.format(mat_reshaped))
 
     mat_scanned = MatScanner.scan(mat, 1, 2, MatScanner.Direction.up_left)
     print('\n- Up Right order: {}'.format(mat_scanned))
-    mat_reshaped = MatScanner.reshape(mat_scanned, mat.shape, 1, 2, MatScanner.Direction.up_left)
+    mat_reshaped = MatScanner.reshape(mat_scanned, mat.shape, 1, 2,
+                                      MatScanner.Direction.up_left)
     print('- Original: \n{}'.format(mat_reshaped))
 
     mat_scanned = MatScanner.scan(mat, 1, 3, MatScanner.Direction.z_raster)
-    print('\n- Zig Zag Raster order: {}'.format(mat_scanned))
-    mat_reshaped = MatScanner.reshape(mat_scanned, mat.shape, 1, 3, MatScanner.Direction.z_raster)
+    print('\n- Zig zag Raster order: {}'.format(mat_scanned))
+    mat_reshaped = MatScanner.reshape(mat_scanned, mat.shape, 1, 3,
+                                      MatScanner.Direction.z_raster)
+    print('- Original: \n{}'.format(mat_reshaped))
+
+    mat_scanned = MatScanner.scan(mat, 0, 3, MatScanner.Direction.z_left_down)
+    print('\n- Zig zag Left Down order: {}'.format(mat_scanned))
+    mat_reshaped = MatScanner.reshape(mat_scanned, mat.shape, 0, 3,
+                                      MatScanner.Direction.z_left_down)
     print('- Original: \n{}'.format(mat_reshaped))
