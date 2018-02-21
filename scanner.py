@@ -16,13 +16,19 @@ class MatScanner:
         up_right = 6
         up_left = 7
         z_raster = 8
+        z_raster_up = 9
         z_left_down = 11
         z_down_right = 12
         z_up_right = 14
 
     @staticmethod
-    def _zig_zag(mat, axis=0):
-        """Computes the no row-jump or column-jump order for the 8 last directions.
+    def _zig_zag(mat, axis=0, inverse=False):
+        """Computes the no row-jump or column-jump order for the 8 last
+        directions. 
+
+        If inverse mode is True, even indexes will be flipped only if the
+        column or row shape is odd. Used for column or row inverse flip
+        order. Up to Down or Right to Left.
 
         Example: 
         >>> mat = np.arange(9).reshape(3, 3)
@@ -35,14 +41,28 @@ class MatScanner:
                [5, 4, 3],
                [6, 7, 8]])
 
-        >>> _zig_zag(mat, 1)
+        >>> _zig_zag(mat, axis=1)
         array([[0, 7, 2],
                [5, 4, 3],
                [6, 1, 8]])
         
+        >>> mat = np.arange(12).reshape(5,2) 
+        array([[0, 1, 2, 3, 4],
+               [5, 6, 7, 8, 9]])
+        
+        >>> mat = _zig_zag(mat, axis=1, inverse=True)
+        array([[0, 1, 7, 3, 9],
+               [5, 6, 2, 8, 4]])
+
+        >>> mat = _zig_zag(mat, axis=1)
+        array([[0, 6, 7, 8, 9],
+               [5, 1, 2, 3, 4]])
+        
         Args:
         	mat: matrix
         	axis: matrix flip axis
+        	inverse: change how the rows or columns will be flipped
+
         """
         if axis == 0:
             b_size = mat.shape[1]
@@ -58,8 +78,14 @@ class MatScanner:
         it = np.nditer(mat, flags=['external_loop', 'buffered'], order=order,
                        op_flags=['readwrite'], buffersize=b_size)
 
+        if inverse and mat.shape[axis] % 2 == 1:
+            parity = 0
+        else:
+            parity = 1
+
+        # Flip the rows or columns
         while it.iternext():
-            if (it.iterindex / b_size) % 2 == 1:
+            if (it.iterindex / b_size) % 2 == parity:
                 it.value[...] = np.flip(it.value, 0)
 
     @staticmethod
