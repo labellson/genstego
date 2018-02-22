@@ -108,8 +108,8 @@ def main():
     ap.add_argument('-s', '--secret', required=True)
     ap.add_argument('-g', '--generations', default=80, type=int)
     ap.add_argument('-p', '--population', default=100, type=int)
-    ap.add_argument('-c', '--crossover', default=0.7, type=int)
-    ap.add_argument('-m', '--mutation', default=0.25, type=int)
+    ap.add_argument('-c', '--crossover', default=0.7, type=float)
+    ap.add_argument('-m', '--mutation', default=0.25, type=float)
 
     args = vars(ap.parse_args())
 

@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 # Chromosome representation
-c_rep = [3, 8, 8, 4, 1, 1, 1]
+c_rep = [4, 8, 8, 4, 1, 1, 1]
 
 def init_gen(length):
     g = list()
@@ -13,7 +13,7 @@ def init_gen(length):
 
 def init_chromosome():
     c = list()
-    c.extend(init_gen(3)) # direction 3 bits
+    c.extend(init_gen(4)) # direction 4 bits
     c.extend(init_gen(8)) # x-offset 8 bits
     c.extend(init_gen(8)) # y-offset 8 bits
     c.extend(init_gen(4)) # bit-planes 4 bits
