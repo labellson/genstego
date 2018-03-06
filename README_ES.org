@@ -1,0 +1,230 @@
+#+TITLE: Image steganography based on a genetic algorithm
+#+AUTHOR: Daniel Laguna Soto - [[mailto:100373538@alumnos.uc3m.es][100373538@alumnos.uc3m.es]]
+#+EMAIL: labellson@gmail.com
+
+#+Options: date:nil H:2
+
+* Uso del programa
+** Paquetes necesarios
+La versión de =Python= utilizada es la =3.6.4=.
+Se necesitan los siguientes paquetes de python: =numpy, PIL, matplotlib, deap=
+
+Pueden instalarse de forma sencilla utilizando =pip=.
+#+BEGIN_EXAMPLE
+pip install <package>
+#+END_EXAMPLE
+
+** Como utilizarlo
+Los únicos argumentos requeridos son =ht= y =s= correspondientes a la imagen host y la imagen secreta.
+
+#+BEGIN_EXAMPLE
+usage: genstego.py [-h] -ht HOST -s SECRET [-g GENERATIONS] [-p POPULATION]
+                   [-c CROSSOVER] [-m MUTATION]
+#+END_EXAMPLE
+
+Ejemplo de uso:
+
+#+BEGIN_EXAMPLE
+python genestego. py -ht img/lenna-256.ppm -s img/grumpy-115.png -g 300 -p 200
+#+END_EXAMPLE
+
+** Como paquete
+También puede importarse en otros trabajos y ser utilizado como paquete. Los métodos interesantes son ~genestego.embed()~ encargado de embeber un mensaje secreto y ~genestego.decode()~ encargado de decodificar el mensaje secreto.
+
+* Introducción
+En este trabajo se ha implementado en =Python= el método de esteganografía definido por cite:kanan2014novel utilizando un algoritmo genético. La esteganografía es un método utilizado con el objetivo de ocultar un mensaje secreto dentro de otro, que actúa como host, de forma que una persona no sea capaz de discernir la existencia de un mensaje secreto. 
+
+El objetivo de este trabajo es modelar el problema de esteganografía como un problema de búsqueda y optimización de forma que se pueda ocultar una imagen secreta dentro de otra imagen host.
+
+* Esteganografía
+Antes de empezar a explicar la solución del problema y la representación del cromosoma del algoritmo genético (GA), se va a explicar algunos conceptos básicos sobre esteganografía.
+
+Para ser capaz de ocultar una señal digital dentro de otra, lo primero que se hace es convertir las señales a secuencia de bits, para poder proceder a la ocultación.
+
+** Raster order y Least Significant Bit
+Una imagen es una matriz de píxeles con valor entre 0-255 (Byte). Una de las formas básicas de embeber los datos en la imagen host es utilizar *Raster order* y *LSB*.
+
+A la hora de generar una secuencia de bits, empezaremos escaneando los píxeles de la imagen utilizando *raster order*. Los píxeles son escaneados de izquierda a derecha empezando por la esquina superior izquierda de la imagen como indica la Figura ref:fig:raster-order.
+
+#+CAPTION: Pixel Scan Raster Order cite:kanan2014novel 
+#+ATTR_LATEX: :width 0.3\textwidth
+#+NAME: fig:raster-order
+[[file:report/raster-order.png]]
+
+Para embeber la secuencia de bits secreta en la secuencia de bits host, se embebe cada bit secreto en el bit menos significativo (*LSB*) de cada Byte de la secuencia host. De esta forma, embeberemos un bit secreto en cada píxel de la imagen host, por lo que utilizaremos 8 píxeles host para embeber 1 píxel secreto.
+
+Utilizando este método solo se sobrescribe el *LSB* de la imagen host, por lo que la perdida de información de la imagen original frente al ojo humano es casi imperceptible Figura ref:fig:lenna-airplane.
+
+#+CAPTION: Lenna host (256x256). Lenna stego (256x256). Jet (81x81).
+#+ATTR_LATEX: :width \textwidth
+#+NAME: fig:lenna-airplane
+[[file:report/lenna-airplane.png]]
+
+Pero esta configuración no tiene por que ser la mejor, pues existen varias direcciones de escaneo y distintos puntos de inicio que podrían funcionar mejor que la técnica de Raster order y LSB. Figura ref:fig:scan-orders.
+
+#+CAPTION: Pixel Scan order 1. Pixel Scan order 2. Raster order con distinto punto de inicio cite:kanan2014novel 
+#+ATTR_LATEX: :width \textwidth
+#+NAME: fig:scan-orders
+[[file:report/scan-orders.png]]
+* Algoritmo Genético
+Para la implementación del algoritmo genético se ha utilizado la librería [[https://github.com/DEAP/deap][DEAP]], Un framework para la creación de algoritmos evolutivos en =Python=.
+
+** Codificación genética
+Un cromosoma esta compuesto por 7 genes que se pueden observar en la tabla ref:tab:genetic-code.
+
+#+CAPTION: Codificación genética
+#+NAME: tab:genetic-code
+|------------+-------+----------+---------------------------------------------------|
+| Nombre Gen | Rango | Longitud | Descripción                                       |
+|------------+-------+----------+---------------------------------------------------|
+| Direction  |   0-7 | 3 Bits   | Dirección de escaneo de píxeles de la imagen host |
+| X-offset   | 0-255 | 8 Bits   | offset en x del punto de inicio                   |
+| Y-offset   | 0-255 | 8 Bits   | offset en y del punto de inicio                   |
+| Bit-Planes |  0-15 | 4 Bits   | LSBs utilizados para la inserción de bits         |
+| SB-Pole    |   0-1 | 1 Bit    | Inversión de los bits secretos                    |
+| SB-Dire    |   0-1 | 1 Bit    | Dirección de los bits secretos                    |
+| BP-Dire    |   0-1 | 1 Bit    | Dirección de los bit planes                       |
+|------------+-------+----------+---------------------------------------------------|
+
+*** *Direction*
+	
+Este gen indica en que dirección se escanea la imagen. Hay 8 direcciones posibles, y una de ellas es el raster order. Se utilizan 3 bits para representarlo.
+
+*** *X-offset*
+	
+Indica la columna de la imagen que va a ser utilizada para empezar el escaneo. Se utilizan 8 bits para representarlos.
+
+*** *Y-offset*
+
+Indica la fila de la imagen que va a ser utilizada para empezar el escaneo. Se utilizan 8 bits para representarlos.
+
+*** *Bit-Planes*
+
+Se representa mediante 4 bits. Indica que bits de la imagen host van a ser utilizados para la inserción del mensaje secreto. Se utilizarán los bits del *LSB* o *MSB* dependiendo del gen *BP-Dire*. Por ejemplo si Bit-Planes es igual a =0001= se utilizaría el bit menos significativo para embeber información, =0101= el bit menos significativo y el tercer bit menos significativo.
+
+*** *SB-Pole*
+
+Es un único bit. Si su valor es =1=, se hace el complemento a uno de la secuencia de bits secretos. Si es =0= no se hace nada. Por ejemplo si el gen tiene valor =1= y nuestra secuencia secreta es =1001=, deberíamos cambiarla a =0110=.
+
+*** *SB-Dire*
+Es un único bit. Si su valor es =1=, se invierte la secuencia de los bits secretos. Es decir, en vez de empezar por el principio empezaremos por el final. Si es =0= no se hace nada. Por ejemplo si el gen tiene valor =1= y la secuencia secreta es =0001= lo cambiaremos a =1000=.
+
+*** *BP-Dire*
+
+Es un único bit. Si su valor es =1=, se embebe el mensaje secreto en los 4 *LSB*. Si su valor es =0= se embebe en los 4 *MSB*.
+
+** Fitness - PSNR
+La función de fitness utilizada para evaluar a los individuos es la función [[https://en.wikipedia.org/wiki/Peak_signal-to-noise_ratio][Peak Signal to Noise Ratio - PSNR]]. Esta función relaciona la máxima energía de una señal y el ruido que afecta a su representación. En el ámbito de la compresión de imágenes, se utiliza para medir la calidad de reconstrucción de una imagen. Se mide en decibelios (dB) y aumenta cuanto mejor sea la codificación. Es una función logarítmica (ref:eq:psnr) donde $MAX$ es el valor máximo de intensidad de un píxel y $MSE$ (ref:eq:mse) el error cuadrático medio entre la imagen host y stego.
+
+#+BEGIN_latex
+\begin{equation}
+PSNR = 10 \cdot log_{10}(\frac{MAX_i^2}{MSE})
+\label{eq:psnr}
+\end{equation}
+#+END_latex
+
+#+BEGIN_latex
+\begin{equation}
+MSE = \frac{1}{MN} \sum_{i=0}^{M-1}\sum_{j=0}^{N-1}||I(k,j) - K(i,j)||^2
+\label{eq:mse}
+\end{equation}
+#+END_latex
+
+** Características del algoritmo genético
+El algoritmo utilizado es el [[http://deap.readthedocs.io/en/master/api/algo.html#deap.algorithms.eaSimple][eaSimple]] y viene definido dentro de la librería =DEAP=. Se puede ver su funcionamiento en el siguiente código. 
+
+#+BEGIN_SRC python
+evaluate(population)
+for g in range(ngen):
+    population = select(population, len(population))
+    offspring = varAnd(population, toolbox, cxpb, mutpb)
+    evaluate(offspring)
+    population = offspring
+#+END_SRC
+
+Primero se hace la evaluación de la población actual y se asigna a cada individuo un fitness. Después de esto se entra en el loop generacional: Dentro se hace la selección de los nuevos individuos. Luego se produce la siguiente generación utilizando los operadores de cruce y mutación, se evalúa los individuos de la nueva generación. Y finalmente se reemplaza la población anterior por la nueva generada y se sigue evolucionando hasta que se llegue al limite de generaciones. A continuación se explica los operadores genéticos utilizados.
+
+*** *Selección*
+	
+El operador de selección utilizado ha sido un torneo de dos individuos. Este operador esta implementado en =DEAP= con el método [[http://deap.readthedocs.io/en/master/api/tools.html#deap.tools.selTournament][selTournament]].
+
+*** *Cruce*
+	
+El operador de cruce es un cruce simple implementado en la función ~cxTwoPointCopy~ que puede encontrarse en el fichero =genstego.py=.
+
+*** *Mutación*
+	
+El operador de mutación esta implementado en =DEAP= con el método [[http://deap.readthedocs.io/en/master/api/tools.html#deap.tools.mutFlipBit][mutFlipBit]]. Si se aplica mutación a un individuo este método aplica el operador =NOT= a cada bit uno a uno siempre que se supere una probabilidad.
+* Ocultar un mensaje secreto
+Para insertar el mensaje secreto se ha seguido el siguiente diagrama de flujo. Figura ref:fig:encode-message. 
+
+Para la imagen host, se genera una secuencia de píxeles siguiendo los parámetros =X-offset=, =Y-offset= y =Direction=. Seguido a esto se crea la secuencia de bits de la imagen host en la que se embeberán los bits secretos.
+
+Para la imagen secreta, se genera la secuencia de bits en =RAW=. Y se realizan las operaciones necesarias según los genes =BP-Pole= y =SB-Dir=.
+
+Si la secuencia de bits secretos es mayor que el numero de bits disponibles en la imagen host, se asignara al individuo fitness 0 y no se embeberá nada. Por el contrario, si se puede ocultar se embeben los bits secretos en la secuencia host utilizando =Bit-Planes= y =BP-Dir=.
+
+#+CAPTION: Embeber el mensaje secreto
+#+ATTR_LATEX: :width 0.8\textwidth :placement [H]
+#+NAME: fig:encode-message
+[[file:report/encode-message.png]]
+
+* Extraer un mensaje secreto
+Para extraer el mensaje secreto se ha seguido el siguiente diagrama de flujo. Figura ref:fig:decode-message.
+
+Primero se utiliza los genes =X-offset=, =Y-offset= y =Direction= para crear la secuencia de píxeles stego y convertirla a secuencia de bits. Se extraen los bits secretos en =RAW= de la secuencia stego utilizando los genes =BP-Dir= y =Bit-Planes=. Se realizan las operaciones necesarias según los genes =BP-Pole= y =SB-Dir=. Finalmente se construye la imagen convirtiendo los bits a píxeles.
+
+#+CAPTION: Decodificar el mensaje secreto
+#+ATTR_LATEX: :width 0.8\textwidth :placement [H]
+#+NAME: fig:decode-message
+[[file:report/decode-message.png]]
+
+* Resultados
+Se ha hecho la misma prueba que en cite:kanan2014novel. Se ha utilizado la imagen de =Lenna= con un tamaño de =256x256= para embeber las imágenes de =Baboon=, =Jet= y =Pepper= con los siguientes tamaños: =64x64=, =81x81=, =127x127=, =140x140=, =162x162=, =180x180=. Figura ref:fig:test-imgs.
+
+#+CAPTION: Fitness durante la evolución. Mensajes secretos (64x64)
+#+ATTR_LATEX: :width \textwidth :placement [H]
+#+NAME: fig:test-imgs
+[[file:report/test-imgs.png]]
+
+Se ejecuto el software sobre las imágenes de la Figura ref:fig:test-imgs con los parámetros de la tabla ref:tab:params. Se eligieron estos parámetros, por que se consigue un resultado parecido con los parámetros utilizados en cite:kanan2014novel. 
+
+#+NAME: tab:params
+#+CAPTION: Parametros utilizados en los tests
+|----------------+------|
+| Generaciones   |   80 |
+| Prob. Cruce    |  0.7 |
+| Prob. Mutacion | 0.25 |
+|----------------+------|
+
+#+NAME: tab:results
+#+CAPTION: Tabla de resultados maximos obtenidos
+|----------+----------------------+---+----------+-------+--------|
+| Capacity |                      |   | PSNR (%) |       |        |
+|----------+----------------------+---+----------+-------+--------|
+|        % | bpp (bits per pixel) |   |   Baboon |   Jet | Pepper |
+|----------+----------------------+---+----------+-------+--------|
+|     6.25 |                 0.50 |   |    30.38 | 30.17 |  30.16 |
+|     10.0 |                 0.80 |   |    28.27 | 28.13 |  28.12 |
+|     20.1 |                 1.61 |   |    21.64 | 20.97 |  21.38 |
+|     24.6 |                 1.96 |   |    20.73 | 20.10 |  20.51 |
+|     29.9 |                 2.39 |   |    15.31 | 15.12 |  15.11 |
+|     40.0 |                 3.20 |   |     9.61 |  8.92 |   9.26 |
+|     49.4 |                 3.95 |   |     8.67 |  7.96 |   8.32 |
+|----------+----------------------+---+----------+-------+--------|
+
+En tabla ref:tab:results puede verse los fitness de los mejores individuos encontrados por cada imagen. Como puede observarse, los resultados obtenidos son peores que los conseguidos por los autores de cite:kanan2014novel. Estos resultados pueden ser debidos a que en cite:kanan2014novel se implementan 16 direcciones de escaneo, mientras que en este trabajo solo la mitad, por lo que la búsqueda de soluciones queda mas limitada. En las Figuras ref:fig:64 y ref:fig:180 puede verse la evolución del fitness de la población en cada generación del algoritmo genético. Se observa que cuando el mensaje secreto es mas pequeño, el algoritmo, a pesar de la rápida convergencia, es capaz de encontrar un individuo mejor que los encontrados en la población inicial. Cuando el mensaje secreto es mas largo, el algoritmo genético encuentra un individuo muy cercano al optimo en la población inicial y este mejora muy poco en comparación con el anterior.
+
+#+CAPTION: Fitness durante la evolución. Mensajes secretos (64x64)
+#+ATTR_LATEX: :width \textwidth :placement [H]
+#+NAME: fig:64
+[[file:report/plots/64x64.png]]
+
+#+CAPTION: Fitness durante la evolución. Mensajes secretos (180x180)
+#+ATTR_LATEX: :width \textwidth :placement [H]
+#+NAME: fig:180
+[[file:report/plots/180x180.png]]
+
+* Referencias
+bibliographystyle:abbrv
+bibliography:~/Drive/org/bibliography/main.bib
