@@ -1,4 +1,4 @@
-#+TITLE: Genstego: Image Steganography Based on a Genetic Algorithm
+#+TITLE: [[https://dani.codes/post/genstego/][Genstego: Image Steganography Based on a Genetic Algorithm]]
 #+AUTHOR: Daniel Laguna - [[mailto:labellson@gmail.com][labellson@gmail.com]]
 #+EMAIL: labellson@gmail.com
 
